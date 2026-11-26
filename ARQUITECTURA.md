@@ -54,3 +54,99 @@ misma vía.
 - Un protocolo de red: comandos hacia arriba, estado o cambios hacia abajo.
 - Simular también las regiones que nadie está mirando pero que algún jugador ya descubrió (hoy solo cuentan las descubiertas en esta máquina).
 - La lógica del jugador: su ciudad, sus soldados y sus órdenes, que serán comandos más.
+
+## Los sistemas y cómo se hablan (estado del 26-nov)
+
+El juego tiene cuatro escenas que se turnan en `main.lua` y una simulación
+que no se para nunca:
+
+```
+                 ┌──────────────────────────────────────────────┐
+                 │  SIMULACIÓN  mundo/simulacion.lua (+ 22 en    │
+                 │  mundo/simulacion/): naciones, guerras,       │
+                 │  almacenes, misiles… determinista, sin LÖVE   │
+                 └───────▲───────────────────────────┬──────────┘
+          órdenes        │ ejecutar({ tipo = … })    │ se lee sim.estado
+   (las únicas que       │                           │ (solo lectura)
+    cambian algo)        │                           ▼
+ ┌────────────┬──────────┴──┬──────────────┬───────────────┐
+ │ MAPA       │ BATALLA 3D  │ ALMACÉN 3D   │ CAMPAÑA 3D    │
+ │ mundo/ +   │ batalla/    │ almacen/     │ campana/      │
+ │ interfaz/  │             │              │               │
+ └────────────┴──────┬──────┴──────┬───────┴───────────────┘
+                     │             │
+                     ▼             ▼
+              robots/ (núcleo común de los robots: piezas, especializaciones)
+              batalla/dream/ (dibujo 3D con 3DreamEngine: lo usan batalla,
+              almacén e interfaz)
+```
+
+### Quién es dueño de cada dato
+
+| Dato | Dueño | Cómo lo cambian los demás | Dónde se guarda |
+|---|---|---|---|
+| Terreno, ciudades, yacimientos | La semilla (`mundo/`) | Nadie: se genera igual en cada máquina | No se guarda |
+| Naciones, guerras, grupos, territorio, dinero, recursos del almacén, misiles | La simulación | Órdenes `ejecutar({ tipo = … })`: hay 31 desde fuera (interfaz, batalla, almacén, main) | `partida.lua` (`Simulacion:guardar`) |
+| Resultado de una batalla | La batalla 3D mientras dura | Al salir, la orden `resolverBatalla` devuelve bajas y heridos a la simulación | En la simulación |
+| Almacén de cada nación para los guiones | La simulación | `Almacen` (global, `almacen/almacen.lua`): `get…` lee y `set…` manda órdenes | En la simulación |
+| Cajas, robots y racks del almacén 3D | La escena del almacén | Directo, sin órdenes | `almacen_disposicion.lua`, aparte |
+| Ordenadores de la sala (ventanas, carpeta personal, muro) | `almacen/pc/` | Directo, sin órdenes | `almacen_ordenadores.lua`, aparte |
+| Lo que aprenden los robots | `robots/conocimiento.lua` | Directo | Archivos JSON propios |
+| Ajustes del jugador | `interfaz/ajustes.lua` | Directo | Su archivo |
+
+Comprobado en el código: nada fuera de la simulación escribe en
+`sim.estado`; todo lo que cambia el mundo vivo pasa por `ejecutar`. Las
+lecturas directas de `sim.estado` sí están repartidas: unas 59 en la
+interfaz, 59 en `main.lua`, 8 en la batalla y 6 en el almacén.
+
+### Las escenas
+
+- **Mapa** (`main.lua`, `mundo/`, `interfaz/`): el mundo isométrico, los
+  paneles y la IA de los gobernantes. `main.lua` hace de director: carga,
+  actualiza y dibuja la escena que toca y reparte el teclado y el ratón.
+- **Batalla 3D** (`batalla/`): `Escena.nueva(mundo, combate)` la crea a partir
+  de una batalla de la simulación; mientras dura, la simulación sigue más
+  lenta (`RITMO_BATALLA`). Física con Jolt (`batalla/robots/fisica.lua`).
+- **Almacén 3D** (`almacen/`): la nave de la nación del jugador, sus robots,
+  la fábrica de misiles y la sala de control con sus ordenadores
+  (`almacen/pc/`). Los archivos de la red de los ordenadores leen la partida
+  en vivo.
+- **Campaña 3D** (`campana/`): el mapa en relieve.
+
+### Los robots
+
+Un mismo robot está repartido en tres sitios:
+
+- `robots/`: el núcleo común (`nucleo.lua`, `pieza.lua`, `union.lua`) y las
+  especializaciones que valen en todas partes (lidar, combate, torreta…);
+- `batalla/robots/`: el robot en la batalla y sus especializaciones de
+  combate y vehículos (camión de misiles, avión de carga…);
+- `almacen/robots/`: el robot del almacén y sus encargos.
+
+## Lo que está torcido (deuda), por orden de riesgo
+
+1. **Lo del almacén se guarda fuera de la partida.** Las cajas, los robots y
+   los ordenadores van en archivos propios, sin órdenes y sin la semilla de
+   la partida dentro de la simulación. En línea no viajarían, y al cargar
+   otra partida dependen de que el archivo «sea de la misma». Cuando haya
+   servidor, esto tendrá que pasar a la simulación o a un guardado único con
+   todo.
+2. **Dos sistemas de vehículos.** `batalla/vehiculos/` (el viejo, con
+   `GestorVehiculos`) sigue vivo en el lanzamisiles, `mundo/modelos3d.lua`,
+   `batalla/articulacion_camion.lua` y en `robots/pieza.lua`. La decisión del
+   18-nov es que todo vaya con los robots (`robots/nucleo.lua`).
+3. **Archivos gigantes.** `main.lua` (4.909 líneas: arranque, entrada, las
+   cuatro escenas, capturas y medidas), `mundo/simulacion.lua` (4.475) y
+   `batalla/tropas.lua` (3.078). Cada cosa nueva los engorda.
+4. **Capas que se cruzan.** La simulación y el mundo usan la interfaz
+   (`mundo/mundo.lua` → `interfaz/inteligencia`, `interfaz/tema` en 3
+   sitios), y la interfaz usa el dibujo de la batalla
+   (`batalla/dream/calidad`, `biblioteca_pbr`). Lo de abajo no debería
+   conocer lo de arriba: los colores del tema se pueden pasar como dato.
+5. **Tres serializadores iguales** (`mundo/simulacion/guardado.lua`,
+   `almacen/disposicion.lua`, `almacen/pc/guardado.lua`). Uno solo bastaría.
+6. **`MAPA-DEL-CODIGO.md` está viejo** (15-nov: no tiene `almacen/`,
+   `robots/` ni `campana/`) y su generador, `tools/generar_mapa_codigo.py`,
+   ya no está en el repositorio.
+7. **`runtime/`** (19.056 líneas) es el runtime del editor de mapas; el juego
+   no lo carga.
