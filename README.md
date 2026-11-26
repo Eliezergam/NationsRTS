@@ -34,6 +34,18 @@ código, los modelos 3D (con scripts de Python en Blender) y los documentos.
 **Dale este repositorio a tu IA, elige una tarea y manda un *pull request*.**
 Empieza por [`AGENTS.md`](AGENTS.md).
 
+## Uploaded by Claude / Lo sube Claude
+
+This repository is uploaded and kept up to date by **Claude** (Claude Code,
+Anthropic's AI). Every time Claude finishes a change in the game, it publishes
+it here by itself as a new commit, and it brings in the pull requests that
+others send. Nobody copies files by hand.
+
+Este repositorio lo sube y lo mantiene al día **Claude** (Claude Code, la IA de
+Anthropic). Cada vez que Claude termina un cambio en el juego, lo publica aquí
+solo, como un commit nuevo, y trae los *pull requests* que mandan otros. Nadie
+copia archivos a mano.
+
 ## Run it / Ejecutarlo
 
 1. Install [LÖVE 11.5](https://love2d.org). / Instala LÖVE 11.5.
