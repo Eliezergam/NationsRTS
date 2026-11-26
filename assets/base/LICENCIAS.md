@@ -17,6 +17,12 @@ obligación de atribución. Fuente: <https://ambientcg.com>, descargas `1K-JPG`.
 | `basePeligro` | [Metal032](https://ambientcg.com/view?id=Metal032), [PaintedMetal004](https://ambientcg.com/view?id=PaintedMetal004), [PaintedMetal006](https://ambientcg.com/view?id=PaintedMetal006) | Franjas amarillas y negras propias sobre ese acero, con desconchones y óxido |
 | `baseMadera` | [WoodFloor043](https://ambientcg.com/view?id=WoodFloor043) | Color, normal, rugosidad y AO |
 | `baseVidrio` | — | Procedural (texturas_base.py), sin fuente externa |
+| `salaLaminado` | [Plastic011](https://ambientcg.com/view?id=Plastic011) | Relieve, rugosidad y variación de luz; color gris claro de laminado (tools/blender/texturas_sala.py) |
+| `salaPlastico` | [Plastic012A](https://ambientcg.com/view?id=Plastic012A) | Plástico negro mate texturizado de monitores, teclados, ratones, torres y sillas |
+| `salaTela` | [Fabric030](https://ambientcg.com/view?id=Fabric030) | Tela del asiento de las sillas, antracita |
+| `salaMalla` | [Fabric082A](https://ambientcg.com/view?id=Fabric082A) | Tejido fino del respaldo de malla, negro |
+| `salaAluminio` | [Metal009](https://ambientcg.com/view?id=Metal009) | Aluminio cepillado de las bases de las sillas y el marco de las mesas |
+| `salaGoma` | [Rubber004](https://ambientcg.com/view?id=Rubber004) | Ruedas de las sillas, niveladores y patas |
 
 ## Atlas de las estaciones (Synty)
 

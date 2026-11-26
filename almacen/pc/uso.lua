@@ -23,9 +23,10 @@ UsoPC.alturaPantalla = 0.86 + 0.34
 UsoPC.cerca = 1.9 -- m de la cámara a la pantalla para que salga la tecla
 UsoPC.acercar = 0.75 -- s de viaje de la cámara
 UsoPC.fundido = 0.25 -- s del fundido entre la sala y la pantalla
--- Distancia a la que la pantalla (0,34 m de alto) llena la vista con el
--- campo de 65° de la cámara del almacén: 0,17 / tan(32,5°) = 0,27 m.
-UsoPC.distanciaFinal = 0.29
+-- Distancia a la que la pantalla (monitor de 32": 0,392 m de alto) llena la
+-- vista con el campo de 65° de la cámara del almacén: 0,196 / tan(32,5°) =
+-- 0,31 m.
+UsoPC.distanciaFinal = 0.33
 UsoPC.teclaUsar = 'e'
 
 --- `escena`: la del almacén (cámara en x, y = altura, z = -y del almacén).

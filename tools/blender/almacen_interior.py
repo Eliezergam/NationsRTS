@@ -35,6 +35,9 @@ import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import sala_puesto  # noqa: E402
+
 RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 MATERIALES = os.path.join(RAIZ, 'assets', 'base', 'materiales')
 
@@ -265,6 +268,19 @@ def crearMateriales():
         'cableNaranja': materialLiso('cableNaranja', (0.8, 0.28, 0.05), 0.55),
         'cableAzul': materialLiso('cableAzul', (0.08, 0.25, 0.65), 0.55),
         'ledFijo': materialLiso('ledFijo', (0.2, 1.0, 0.4), 0.4, 0.0, 6.0),
+        # Puestos de la sala (tools/blender/sala_puesto.py): texturas reales de
+        # tools/blender/texturas_sala.py y los lisos de las letras, juntas y
+        # pilotos.
+        'salaLaminado': materialKit('salaLaminado', 0.0),
+        'salaPlastico': materialKit('salaPlastico', 0.0),
+        'salaTela': materialKit('salaTela', 0.0),
+        'salaMalla': materialKit('salaMalla', 0.0),
+        'salaAluminio': materialKit('salaAluminio', 1.0),
+        'salaGoma': materialKit('salaGoma', 0.0),
+        'leyenda': materialLiso('leyenda', (0.85, 0.87, 0.88), 0.5),
+        'ranura': materialLiso('ranura', (0.004, 0.004, 0.005), 0.8),
+        'ledApagado': materialLiso('ledApagado', (0.02, 0.05, 0.03), 0.3),
+        'ledBlanco': materialLiso('ledBlanco', (0.9, 0.95, 1.0), 0.3, 0.0, 4.0),
     }
 
 
@@ -1752,39 +1768,11 @@ def crearTabique(m, piezas, vidrios, coleccion, x0, y0, x1, y1, puertaX=None):
 
 
 def crearPuesto(m, piezas, coleccion, x, y, indice, monitores):
-    """Mesa de 1,8 x 0,8 m mirando a +y (el operador en y - 0,75), torre, un
-    monitor de frente (su pantalla va a `monitores`) y silla."""
-    zm = SALA_SUELO + 0.74
-    piezas.append(mallaCaja('tablero', (x, y, zm), (1.8, 0.8, 0.04), m['mesaSala'], coleccion))
-    for dx in (-0.87, 0.87):
-        piezas.append(mallaCaja('pataMesa', (x + dx, y, (SALA_SUELO + zm) / 2), (0.05, 0.72, zm - SALA_SUELO), m['grisBanco'], coleccion))
-    piezas.append(mallaCaja('faldon', (x, y + 0.36, zm - 0.25), (1.7, 0.02, 0.4), m['grisBanco'], coleccion))
-    # Torre bajo la mesa, con el piloto encendido.
-    piezas.append(mallaCaja('torre', (x + 0.6, y - 0.02, SALA_SUELO + 0.24), (0.2, 0.45, 0.46), m['carcasa'], coleccion))
-    piezas.append(mallaCaja('piloto', (x + 0.6, y - 0.246, SALA_SUELO + 0.4), (0.02, 0.004, 0.02), m['ledFijo'], coleccion))
-    # Un monitor de 27" (0,60 x 0,34 de imagen) de frente: cada puesto es un
-    # ordenador propio con su pantalla (el dueño, 26-nov: «quiero que cada pc
-    # sea independiente»; antes eran tres de 24" por puesto con lo mismo).
-    cx, cy, cz = x, y + 0.2, zm + 0.34
-    mira = (0.0, -1.0)
-    carcasa = mallaCaja('monitor', (cx, cy, cz), (0.64, 0.035, 0.39), m['carcasa'], coleccion)
-    piezas.append(carcasa)
-    piezas.append(mallaCaja('pieMonitor', (cx, cy + 0.05, zm + 0.15), (0.05, 0.04, 0.28), m['carcasa'], coleccion))
-    piezas.append(mallaCaja('baseMonitor', (cx, cy + 0.05, zm + 0.028), (0.24, 0.17, 0.015), m['carcasa'], coleccion))
-    monitores.append((esquinasPantalla((cx, cy, cz), mira, 0.60, 0.34, 0.0185), (0, 0, 1, 1)))
-    # Teclado y ratón.
-    piezas.append(mallaCaja('teclado', (x, y - 0.18, zm + 0.03), (0.45, 0.15, 0.02), m['carcasa'], coleccion))
-    piezas.append(mallaCaja('raton', (x + 0.32, y - 0.18, zm + 0.03), (0.06, 0.1, 0.03), m['carcasa'], coleccion))
-    # Silla de oficina: asiento, respaldo, columna y estrella de 5 patas.
-    ys = y - 0.75
-    piezas.append(mallaCaja('asiento', (x, ys, SALA_SUELO + 0.48), (0.5, 0.48, 0.08), m['tapizado'], coleccion))
-    piezas.append(mallaCaja('respaldo', (x, ys - 0.25, SALA_SUELO + 0.8), (0.46, 0.06, 0.55), m['tapizado'], coleccion))
-    piezas.append(mallaCaja('columna', (x, ys, SALA_SUELO + 0.27), (0.05, 0.05, 0.38), m['cromo'], coleccion))
-    for k in range(5):
-        a = k * 2 * math.pi / 5
-        fin = (x + math.cos(a) * 0.3, ys + math.sin(a) * 0.3, SALA_SUELO + 0.06)
-        piezas.append(cajaOrientada('pata', (x, ys, SALA_SUELO + 0.08), fin, 0.04, 0.03, m['carcasa'], coleccion))
-        piezas.append(mallaCaja('rueda', (fin[0], fin[1], SALA_SUELO + 0.03), (0.05, 0.05, 0.05), m['goma'], coleccion))
+    """Mesa de 1,8 x 0,8 m mirando a +y (el operador en y - 0,75), torre,
+    monitor de 32" de frente (su pantalla va a `monitores`), teclado, ratón
+    y silla, con todo su detalle: tools/blender/sala_puesto.py."""
+    ctx = {'m': m, 'col': coleccion, 'piezas': piezas, 'uv': uvMundo}
+    sala_puesto.puesto(ctx, x, y, indice, monitores, SALA_SUELO, esquinasPantalla)
 
 
 def crearBandeja(m, piezas, coleccion, a, b):
@@ -1841,6 +1829,8 @@ def crearSalaControl(m):
             crearPuesto(m, piezas, col, xp, yf, indice, monitores)
             indice += 1
             mallaPantallas('pantallaPC%d' % indice, monitores, m['pantalla'], col)
+    # Las letras de las teclas, en malla.
+    sala_puesto.terminar({'m': m, 'col': col, 'piezas': piezas, 'uv': uvMundo})
     # Muro de pantallas: bastidor de acero delante del pilar y 6 pantallas.
     zc = SALA_SUELO + 2.3
     piezas.append(mallaCaja('bastidorMuro', (MURO_X, MURO_Y + 0.12, zc), (3 * (PANTALLA_ANCHO + 0.06) + 0.2, 0.1, 2 * (PANTALLA_ALTO + 0.06) + 0.2), m['estructura'], col))
@@ -1908,6 +1898,11 @@ def crearSalaControl(m):
         piezas.append(mallaCaja('canaleta', ((xBajada + xFin) / 2, yc, SALA_SUELO + 0.03), (xFin - xBajada, 0.14, 0.06), m['estructura'], col))
         for xp in SALA_PUESTOS_X:
             cables.append(tubo('subidaMesa', [(xp + 0.6, yc, SALA_SUELO + 0.06), (xp + 0.6, yc - 0.05, SALA_SUELO + 0.4), (xp + 0.6, yf + 0.36, SALA_SUELO + 0.72)], 0.025, m['cable'], col))
+    # Lo que no lleva UV (las cajas de la sala), la del mundo: al unirlo con
+    # lo de los puestos (que sí la lleva) no se quedaría a cero.
+    for pieza in piezas:
+        if pieza.type == 'MESH' and not pieza.data.uv_layers:
+            uvMundo(pieza, 2.0)
     unir(piezas, 'salaControl')
     unir(vidrios, 'vidriosSala')
     unir(cables, 'cablesSala')
@@ -2077,6 +2072,10 @@ def exportarColisiones(ruta):
             # paredes, aunque sean muy largas, sí.
             # Los carteles sí aunque estén altos: el robot los lee con los ojos.
             if c[5] < 0.05 or (c[2] > 2.0 and not tipo.startswith('cartel')):
+                continue
+            # En la sala de control, lo menudo de los puestos (teclas, letras,
+            # botones, ranuras) no estorba a nadie: fuera lo de menos de 5 cm.
+            if objeto.name.startswith('salaControl') and max(c[3] - c[0], c[4] - c[1], c[5] - c[2]) < 0.05:
                 continue
             filas.append("    { '%s', %.2f, %.2f, %.2f, %.2f, %.2f, %.2f }," % (tipo, c[0], c[1], max(0.0, c[2]), c[3], c[4], c[5]))
     with open(ruta, 'w') as archivo:
