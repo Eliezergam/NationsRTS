@@ -72,7 +72,7 @@ local AYUDA = [[
   date, whoami, hostname, uname
   exit               cierra la terminal
 
-Programas (Lua, como en CC: Tweaked; Ctrl+T los corta):
+Programas (Lua; Ctrl+T los corta):
   lua <archivo.lua>  corre un programa de este ordenador
   <archivo.lua>      lo mismo, si está en la carpeta actual o en ~/programas
   robot              los robots y qué hace cada uno
@@ -351,7 +351,7 @@ end
 function Terminal.tecla(estado, ctx, tecla)
     local control = love.keyboard.isDown('lctrl', 'rctrl')
     if procesos[estado] then
-        -- Mientras corre un programa, Ctrl+T lo corta (como en CC).
+        -- Mientras corre un programa, Ctrl+T lo corta.
         if tecla == 't' and control then
             procesos[estado]:terminar()
             Terminal.actualizar(estado, ctx, 0)

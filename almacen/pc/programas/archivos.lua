@@ -1,4 +1,4 @@
--- Programa «Archivos»: el explorador de carpetas (como Dolphin en KDE). Barra
+-- Programa «Archivos»: el explorador de carpetas. Barra
 -- con la ruta y los botones atrás y arriba, lugares a la izquierda (carpeta
 -- personal y red del almacén) y la lista de lo que hay. Clic para marcar,
 -- doble clic (o Intro) para entrar en una carpeta o abrir un archivo con su

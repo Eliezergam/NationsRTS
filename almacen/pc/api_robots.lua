@@ -1,7 +1,6 @@
 -- La API `robots` que ven los programas de Lua de los ordenadores de la sala
 -- (y el programa Robots): mandar a los robots del almacén por su nombre corto
--- ('almacen', 'soldado'), como el `rednet` de CC: Tweaked manda a las
--- tortugas.
+-- ('almacen', 'soldado').
 --
 --   robots.lista()                    { 'almacen', 'soldado' }
 --   robots.estado(nombre)             modo ('trabajo' | 'guion' | 'parado'),

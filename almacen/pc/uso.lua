@@ -1,10 +1,9 @@
 -- Usar un ordenador de la sala de control (el dueño, 26-nov): al acercarse a
 -- un puesto sale «E · Usar ordenador»; con E la cámara se acerca al monitor
--- (como en Alien: Isolation) y, al llegar, la pantalla del PC pasa a ser la
--- nuestra: ratón y teclado van a su escritorio (almacen/pc/ordenador.lua).
--- Con Esc se sale al revés:
--- la pantalla se funde con la sala y la cámara vuelve a donde estaba. Lo que
--- se deja abierto sigue en el monitor.
+-- y, al llegar, la pantalla del PC pasa a ser la nuestra: ratón y teclado van
+-- a su escritorio (almacen/pc/ordenador.lua). Con Esc se sale al revés: la
+-- pantalla se funde con la sala y la cámara vuelve a donde estaba. Lo que se
+-- deja abierto sigue en el monitor.
 --
 -- Los monitores están donde los pone tools/blender/almacen_interior.py
 -- (crearPuesto): mesas en x = 4,6 / 7,2 / 9,8 y en y = 8,6 / 11,2; la

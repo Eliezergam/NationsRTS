@@ -1,14 +1,12 @@
--- Lua dentro del juego, como en CC: Tweaked (el dueño, 26-nov): los
--- programas que se escriben en los ordenadores de la sala (y los guiones que
--- se mandan a los robots) corren aislados, cada uno en su corrutina:
+-- Lua dentro del juego (26-nov): los programas que se escriben en los
+-- ordenadores de la sala corren aislados, cada uno en su corrutina:
 --   * solo ven lo que se les da (math, string, table, print, sleep... y la API
---     de quien los corre: `robot` en un robot, `robots` en un ordenador); nada
---     del juego ni del disco;
---   * las órdenes que tardan (ir a un sitio, esperar) ceden el turno
---     (coroutine.yield) y el programa sigue en un cuadro posterior, como las
---     de la tortuga de CC (`turtle.forward()` espera a que se mueva);
+--     de quien los corre: `robots` en un ordenador); nada del juego ni del
+--     disco;
+--   * sleep cede el turno (coroutine.yield) y el programa sigue en un cuadro
+--     posterior;
 --   * si un programa no cede en mucho rato (un bucle sin `sleep`), se corta
---     con «demasiado tiempo sin esperar», como «Too long without yielding».
+--     con «demasiado tiempo sin esperar».
 --
 --   local p, error = Lua.cargar(codigo, 'patrulla.lua', api, salida)
 --   p:paso(dt) -> 'sigue' | 'fin' | 'error', mensaje
