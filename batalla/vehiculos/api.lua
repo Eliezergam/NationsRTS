@@ -1,0 +1,91 @@
+---@meta
+-- Valores que se pueden usar en los scripts de los vehículos: solo para el
+-- editor (VSCodium te los ofrece al escribir). El juego no carga este
+-- archivo. La referencia completa está en batalla/vehiculos/API.md.
+
+--- Fases del camión lanzamisiles en la batalla (`vehiculo:getFase()`), en el
+-- orden en que pasan (batalla/tropas.lua, Tropas:actualizarLanzacohetes).
+---@alias FaseVehiculo
+---| 'despliegue' # Al empezar la batalla: avanza un poco hacia su sitio.
+---| 'orden'      # Va adonde se le ha mandado.
+---| 'frenando'   # Ha llegado: frena hasta quedarse quieto.
+---| 'espera'     # Parado, rampa abajo y gatos recogidos, esperando un blanco.
+---| 'apoyando'   # Baja los gatos (vehiculo:getGatos() va de 0 a 1).
+---| 'subiendo'   # Sube la rampa (vehiculo:getElevacion() va de 0 a 35).
+---| 'fuego'      # Rampa arriba: dispara los misiles de uno en uno.
+---| 'bajando'    # Baja la rampa y recoge los gatos.
+---| 'recarga'    # Rampa abajo: carga misiles en la rampa.
+
+--- Ejes para girar piezas (`pieza:setGiro(eje, angulo)`).
+---@alias Eje
+---| 'x' # Hacia delante: gira de lado, como una rueda vista de frente.
+---| 'y' # Hacia la izquierda: cabecea, como la rampa al subir.
+---| 'z' # Hacia arriba: gira el rumbo, como el volante.
+
+--- Piezas del camión lanzamisiles (`vehiculo:getPieza(nombre)`).
+---@alias PiezaCamion
+---| 'chasis'
+---| 'insignia'
+---| 'puertaIzquierda'
+---| 'puertaDerecha'
+---| 'balizaLuz'
+---| 'ventiladorRadiadorIzquierdo'
+---| 'ventiladorRadiadorDerecho'
+---| 'rampaLanzador'
+---| 'pistonRampaBase'
+---| 'pistonRampaVastago'
+---| 'misilExteriorIzquierdo'
+---| 'misilExteriorDerecho'
+---| 'misilInteriorIzquierdo'
+---| 'misilInteriorDerecho'
+---| 'gatoDelanteraIzquierda'
+---| 'gatoDelanteraDerecha'
+---| 'gatoTraseraIzquierda'
+---| 'gatoTraseraDerecha'
+---| 'ruedaDelanteraIzquierda'
+---| 'ruedaDelanteraDerecha'
+---| 'ruedaMediaIzquierda'
+---| 'ruedaMediaDerecha'
+---| 'ruedaTraseraIzquierda'
+---| 'ruedaTraseraDerecha'
+---| 'ruedaUltimaIzquierda'
+---| 'ruedaUltimaDerecha'
+---| 'suspensionDelanteraIzquierda'
+---| 'suspensionDelanteraDerecha'
+---| 'suspensionMediaIzquierda'
+---| 'suspensionMediaDerecha'
+---| 'suspensionTraseraIzquierda'
+---| 'suspensionTraseraDerecha'
+---| 'suspensionUltimaIzquierda'
+---| 'suspensionUltimaDerecha'
+---| 'amortiguadorDelanteraIzquierdaCuerpo'
+---| 'amortiguadorDelanteraIzquierdaVastago'
+---| 'amortiguadorDelanteraDerechaCuerpo'
+---| 'amortiguadorDelanteraDerechaVastago'
+---| 'amortiguadorMediaIzquierdaCuerpo'
+---| 'amortiguadorMediaIzquierdaVastago'
+---| 'amortiguadorMediaDerechaCuerpo'
+---| 'amortiguadorMediaDerechaVastago'
+---| 'amortiguadorTraseraIzquierdaCuerpo'
+---| 'amortiguadorTraseraIzquierdaVastago'
+---| 'amortiguadorTraseraDerechaCuerpo'
+---| 'amortiguadorTraseraDerechaVastago'
+---| 'amortiguadorUltimaIzquierdaCuerpo'
+---| 'amortiguadorUltimaIzquierdaVastago'
+---| 'amortiguadorUltimaDerechaCuerpo'
+---| 'amortiguadorUltimaDerechaVastago'
+
+--- Tablas del contrato del modelo (`vehiculo:getContrato(nombre)`,
+-- assets/modelos3d/CAMION_MISILES_CONTRATO.md).
+---@alias TablaContrato
+---| 'gatos'        # { pieza, zRecogido, zDesplegado } por gato
+---| 'suspensiones' # { pieza, rueda, recorridoArriba, recorridoAbajo }
+---| 'ruedas'       # { radio, direccion = { nombres de las que giran } }
+---| 'ventiladores' # { pieza, eje, vueltasPorSegundoAlRalenti }
+---| 'apuntan'      # { pieza, hacia, direccionReposo } amortiguadores y pistón
+---| 'puntos'       # anclas: nombre -> { pieza, punto = { x, y, z } }
+---| 'misiles'      # { pieza, cola } por misil de la rampa
+---| 'bocas'        # { x, y, z } por boca de salida
+---| 'rampa'        # datos de la rampa (rotYDesplegado...)
+---| 'puertas'      # las puertas de la cabina
+---| 'elevacion'    # grados de la rampa arriba (35)

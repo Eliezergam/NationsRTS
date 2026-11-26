@@ -1,0 +1,35 @@
+{
+    "Especialización de vehículo": {
+        "scope": "lua",
+        "prefix": "especializacion",
+        "description": "Script nuevo para batalla/vehiculos/especializaciones (el nombre del archivo es el nombre registrado)",
+        "body": [
+            "-- Especialización `${1:${TM_FILENAME_BASE}}`: ${2:qué hace}.",
+            "-- Dentro de cada función, `self` es el vehículo (batalla/vehiculos/API.md).",
+            "",
+            "---@class ${3:${TM_FILENAME_BASE/(.)(.*)/${1:/upcase}$2/}} : Especializacion, Vehiculo",
+            "local $3 = {}",
+            "",
+            "function $3:prerequisitos()",
+            "    return true",
+            "end",
+            "",
+            "function $3:onLoad()",
+            "    self.datos.$1 = {",
+            "        $0",
+            "    }",
+            "end",
+            "",
+            "function $3:onUpdate(dt)",
+            "end",
+            "",
+            "function $3:onPose()",
+            "end",
+            "",
+            "GestorVehiculos.registrarEspecializacion('$1', $3)",
+            "",
+            "return $3",
+            ""
+        ]
+    }
+}
