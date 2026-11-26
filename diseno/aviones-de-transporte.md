@@ -1,6 +1,6 @@
 # Aviones de transporte
 
-> **Estado: PLAN** (2026-11-20). Nada programado todavía salvo el avión 3D,
+> **Estado: EN CURSO** (paso 1 desde el 2026-11-26). Nada programado todavía salvo el avión 3D,
 > su pista en minas y ciudades y el viaje de demostración
 > (`tools/demo_avion.sh`).
 
@@ -25,7 +25,25 @@
    cuando le toca según el mapa y aterriza. Si en el mapa faltaba 1 minuto,
    esperas 1 minuto.
 
-## Propuestas (por decidir; valores de partida)
+## Decisiones del dueño (2026-11-26)
+
+8. **Flota**: cada capital empieza con **1 avión**; los demás se fabrican.
+   Si no hay avión libre, el envío **espera** su turno.
+9. **Todo vuela**: ejércitos, refuerzos, guarniciones, regresos, los
+   recolectores (ida a la mina y vuelta con la carga) y los convoyes de obra.
+   En el mapa ya no camina nada.
+10. **Ida y vuelta**: el avión va a buscar la carga si no está donde sale,
+    la lleva y vuelve vacío a su ciudad. Mientras vuela no está libre.
+11. **Carga en toneladas reales**: 80 t por avión. Robot soldado de 1,85 m,
+    150 kg (unos 530 por avión). Camión de misiles con su misil, 37 t (como
+    un MAZ-543 cargado: 2 por avión). Un envío que pesa más sale en varios
+    aviones o en varios viajes.
+12. **Coste del avión**: 200 dinero, 40 metal y 10 petróleo, 15 días de obra
+    en la ciudad.
+13. **Sin combustible por vuelo**: los robots usan la energía de antes de la
+    extinción (sin combustible ni hélices), como el avión 3D.
+
+## Propuestas de antes (por decidir; valores de partida)
 
 - **Carga**: 15 robots por avión, los 15 huecos de la bodega 3D
   (`embarque.lua`). Un lanzamisiles ocupa 5 huecos. Un envío mayor sale en
