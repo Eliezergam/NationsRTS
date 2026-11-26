@@ -27,4 +27,8 @@ return {
     -- Dispara a los enemigos que ven sus ojos (bloques de práctica:
     -- almacen/blancos.lua).
     'combate',
+    -- Órdenes y guiones desde los ordenadores de la sala (va el último).
+    'guion',
+    -- Lo que un guion de la sala sustituye (el resto es su cuerpo).
+    trabajo = { 'exploracion', 'practicaSoldado', 'combate' },
 }

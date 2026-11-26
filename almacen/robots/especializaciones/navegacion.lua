@@ -26,6 +26,10 @@ Navegacion.frenoDelante = 0.45 -- m libres delante (desde el centro) para seguir
 Navegacion.atascoTiempo = 4 -- s sin avanzar...
 Navegacion.atascoDistancia = 0.15 -- ...más de esto: está atascado
 Navegacion.atascosMaximos = 2 -- con el mismo destino, y lo deja
+-- A menos de 1 m del destino el atasco normal no cuenta (se está encarando),
+-- pero si pasa esto sin llegar, sí: antes esperaba para siempre junto a la
+-- mesa (el dueño, 26-nov: «ese pendejo lleva más de 10 minutos ahí»).
+Navegacion.cercaMaximo = 6 -- s quieto del todo
 Navegacion.tapadosMaximos = 4 -- cuántas veces puede quedarse tapado delante
     -- con el mismo destino antes de dejarlo (si no, empuja contra la pared
     -- horas y horas: el dueño, 22-nov)
@@ -80,7 +84,13 @@ local function ajustarPuertas(self)
                             -- contra la pared de al lado del portón y se queda
                             -- allí empujando (el dueño, 22-nov: «atascado en el
                             -- mismo punto»).
-                            local j = k
+                            -- Solo se quitan los que de verdad se arriman: antes
+                            -- se quitaba siempre el punto que cruza (j empezaba
+                            -- en k), aunque fuera el destino o una esquina
+                            -- lejos del portón; el robot se quedaba sin destino
+                            -- o cortaba por donde no cabe y se atascaba
+                            -- después de cruzar (el dueño, 26-nov).
+                            local j = k + 1
                             for m = k, 1, -1 do
                                 local r = d.ruta[m]
                                 local lat = math.abs((r[1] - cx) * -ny + (r[2] - cy) * nx)
@@ -94,8 +104,9 @@ local function ajustarPuertas(self)
                             for m = k, j, -1 do
                                 table.remove(d.ruta, m)
                             end
-                            table.insert(d.ruta, j, despues)
-                            table.insert(d.ruta, j, antes)
+                            local sitio = math.min(j, k)
+                            table.insert(d.ruta, sitio, despues)
+                            table.insert(d.ruta, sitio, antes)
                             -- Se dice una vez cada tanto por cruce (la ruta
                             -- se replanea a menudo y callaba el paso).
                             local ahora = d.tiempo or 0
@@ -160,7 +171,19 @@ end
 
 function Navegacion:onUpdate(dt)
     local d = self.datos.navegacion
+    if os.getenv('ROBOT_DEPURAR') and self.tipo == 'robotAlmacen' then
+        -- Cada cambio de rama o de destino (para ver por qué no avanza).
+        local c = self.datos.conduccion
+        local clave = tostring(d.rama) .. '|' .. (d.destino and string.format('%.1f,%.1f', d.destino[1], d.destino[2]) or 'nil') .. '|' .. tostring(c.destino ~= nil)
+        if clave ~= d.claveTraza then
+            d.claveTraza = clave
+            print(string.format('TRAZA t=%.2f rama=%s destino=%s conduce=%s v=%.3f giro=%.3f retroceso=%s llegado=%s saliendo=%s final=%s',
+                d.tiempo or 0, tostring(d.rama), d.destino and string.format('%.1f,%.1f', d.destino[1], d.destino[2]) or 'nil',
+                tostring(c.destino ~= nil), self.velocidad, self.giro, tostring(c.retroceso), tostring(self:getHaLlegado()), tostring(d.saliendo), tostring(d.finalEnviado)))
+        end
+    end
     if not d.destino then
+        d.rama = 'sinDestino'
         return
     end
     d.tiempo = (d.tiempo or 0) + dt
@@ -168,17 +191,51 @@ function Navegacion:onUpdate(dt)
     -- ¿Atascado? (sin avanzar un rato): marcha atrás y recalcula; si le
     -- vuelve a pasar con el mismo destino, lo deja (getSinCamino).
     if d.saliendo then
+        d.rama = 'saliendo'
         if self:getHaLlegado() then
             d.saliendo = false
             planear(self)
         end
         return
     end
+    -- (El tiempo sin avanzar lo suma abajo, una vez por cuadro: antes se
+    -- sumaba también aquí y daba por atascado a los 2 s, no a los 4, en
+    -- mitad de cualquier giro grande en el sitio. El dueño, 26-nov.)
     d.atasco = d.atasco or { x = self.x, y = self.y, r = self.rumbo, t = 0 }
-    d.atasco.t = d.atasco.t + dt
     -- Girar en el sitio (al llegar, hacia su rumbo final) también es avanzar.
     local giro = math.abs((self.rumbo - d.atasco.r + math.pi) % (2 * math.pi) - math.pi)
     local cerca = math.sqrt((d.destino[1] - self.x) ^ 2 + (d.destino[2] - self.y) ^ 2) < 1.0
+    -- Solo cuenta el tiempo totalmente quieto (ni avanza ni gira): el último
+    -- metro y el giro para encararse pueden llevar más de 8 s y no son atasco.
+    local quieto = math.abs(self.velocidad) < 0.02 and math.abs(self.giro) < 0.05
+    if cerca and quieto then
+        d.cercaTiempo = (d.cercaTiempo or 0) + dt
+    elseif not cerca then
+        d.cercaTiempo = 0
+    end
+    if d.cercaTiempo > Navegacion.cercaMaximo then
+        d.cercaTiempo = 0
+        d.atasco = nil
+        d.giroTotal = 0
+        d.atascos = (d.atascos or 0) + 1
+        print(string.format('ROBOT no acabo de llegar a %.1f, %.1f (estoy en %.1f, %.1f; vez %d)', d.destino[1], d.destino[2], self.x, self.y, d.atascos))
+        local c = self.datos.conduccion
+        local cd = c.destino
+        print(string.format('DEPURAR cerca: ruta=%d final=%s rumbo=%.2f quiere=%s v=%.3f giro=%.3f conduccion=%s retroceso=%s llegado=%s delante=%.2f',
+            d.ruta and #d.ruta or -1, tostring(d.finalEnviado), self.rumbo, tostring(d.destino[3]), self.velocidad, self.giro,
+            cd and string.format('%.2f,%.2f,%s,marcha=%s', cd[1], cd[2], tostring(cd[3]), tostring(cd.enMarcha)) or 'nil',
+            tostring(c.retroceso), tostring(self:getHaLlegado()), self:getDistanciaDelante(0.66, 0.25)))
+        if d.atascos >= Navegacion.atascosMaximos then
+            d.destino, d.ruta = nil, nil
+            d.sinCamino = true
+            self:setParar()
+            return
+        end
+        d.finalEnviado = false
+        self:setRetroceder(0.5)
+        d.saliendo = true
+        return
+    end
     if (self.x - d.atasco.x) ^ 2 + (self.y - d.atasco.y) ^ 2 > Navegacion.atascoDistancia ^ 2 then
         d.atasco = { x = self.x, y = self.y, r = self.rumbo, t = 0 }
         d.giroTotal = 0
@@ -186,7 +243,12 @@ function Navegacion:onUpdate(dt)
         -- No avanza. Girar en el sitio no cuenta como avanzar (antes sí, y
         -- se quedaba horas girando delante del mismo punto: el dueño, 22-nov);
         -- pero al llegar al destino solo se encara, y eso sí vale.
-        d.giroTotal = (d.giroTotal or 0) + giro
+        -- Lo girado en este cuadro (antes se sumaba el ángulo total desde
+        -- que se paró, cuadro tras cuadro: girado 0,2 rad, en medio segundo
+        -- ya pasaba de 6 y daba por atascado a un robot que solo se estaba
+        -- encarando. El dueño, 26-nov.)
+        local delta = math.abs((self.rumbo - (d.rumboPrevio or self.rumbo) + math.pi) % (2 * math.pi) - math.pi)
+        d.giroTotal = (d.giroTotal or 0) + delta
         if giro > 0.3 then
             d.atasco = { x = self.x, y = self.y, r = self.rumbo, t = 0 }
         else
@@ -205,6 +267,45 @@ function Navegacion:onUpdate(dt)
                 end
                 print(string.format('DEPURAR atascado destino=%.1f,%.1f rumbo=%.2f ruta=[%s]',
                     d.destino[1], d.destino[2], self.rumbo, table.concat(puntos, ' ')))
+                local c = self.datos.conduccion
+                local cd = c.destino
+                print(string.format('DEPURAR conduccion: destino=%s v pedida=%.2f w pedida=%.2f giro=%.2f tapado=%.2f esquivando=%s desvio=%.2f giroTotal=%.2f rama=%s',
+                    cd and string.format('%.2f,%.2f marcha=%s', cd[1], cd[2], tostring(cd.enMarcha)) or 'nil',
+                    c.ultimoV or 0, c.ultimoW or 0, self.giro, d.tapado or 0, tostring(d.esquivando), d.desvio or 0, d.giroTotal or 0, tostring(d.rama)))
+                -- Su mapa alrededor (±4 m, casillas de ruta de 0,2 m; norte
+                -- arriba): R él, > hacia donde mira, * ruta, # bloqueado para
+                -- planear, + ocupado de verdad, . libre visto, espacio sin ver.
+                local rx0, ry0 = mapa:casillaRuta(self.x, self.y)
+                local ruta = {}
+                for _, p in ipairs(d.ruta or {}) do
+                    local a, b = mapa:casillaRuta(p[1], p[2])
+                    ruta[a .. ',' .. b] = true
+                end
+                local fx, fy = mapa:casillaRuta(self.x + math.cos(self.rumbo) * 0.5, self.y + math.sin(self.rumbo) * 0.5)
+                for dy = 20, -20, -1 do
+                    local fila = {}
+                    for dx = -20, 20 do
+                        local a, b = rx0 + dx, ry0 + dy
+                        local cx, cy = mapa:centroRuta(a, b)
+                        local c
+                        if dx == 0 and dy == 0 then
+                            c = 'R'
+                        elseif a == fx and b == fy then
+                            c = '>'
+                        elseif ruta[a .. ',' .. b] then
+                            c = '*'
+                        elseif mapa:getOcupado(cx, cy) then
+                            c = '+'
+                        elseif mapa:bloqueadaRuta(a, b) then
+                            c = '#'
+                        else
+                            local i, j = mapa:casilla(cx, cy)
+                            c = (mapa:dentro(i, j) and mapa.visto[j * mapa.ancho + i] ~= 0) and '.' or ' '
+                        end
+                        fila[#fila + 1] = c
+                    end
+                    print('MAPA |' .. table.concat(fila) .. '|')
+                end
             end
             if d.atascos >= Navegacion.atascosMaximos then
                 d.destino, d.ruta = nil, nil
@@ -217,6 +318,7 @@ function Navegacion:onUpdate(dt)
             return
         end
     end
+    d.rumboPrevio = self.rumbo
     d.reloj = d.reloj + dt
     if d.reloj >= Navegacion.revisar then
         d.reloj = 0
@@ -237,6 +339,7 @@ function Navegacion:onUpdate(dt)
         end
     end
     if not d.ruta then
+        d.rama = 'sinRuta'
         self:setParar()
         return
     end
@@ -255,6 +358,7 @@ function Navegacion:onUpdate(dt)
     end
     local x, y, final = zanahoria(self, d.ruta, corto and Navegacion.adelantoCerca or nil)
     if final then
+        d.rama = d.finalEnviado and 'finalEsperando' or 'final'
         -- El último tramo se manda una sola vez: si se repitiera cada cuadro,
         -- la conducción nunca daría el viaje por acabado.
         if not d.finalEnviado then
@@ -284,6 +388,7 @@ function Navegacion:onUpdate(dt)
             end
         end
         local rumbo, libre = self:getDireccionLibre(deseada, Navegacion.espacioLibre)
+        d.rama = rumbo and string.format('ruta(paso %.2f)', math.min(Navegacion.adelanto, libre - 0.3)) or 'tapado'
         d.esquivando = rumbo and math.abs(((rumbo - deseada) + math.pi) % (2 * math.pi) - math.pi) > 0.05
         if rumbo then
             d.tapado = 0
@@ -476,6 +581,15 @@ function Robot:setNavegarA(x, y, rumboFinal)
     if not mismo then
         d.atasco, d.atascos, d.saliendo = nil, 0, false
         d.tapados = 0
+        d.cercaTiempo = 0
+    end
+    -- Un viaje nuevo empieza sin el giro acumulado del anterior (si no, lo
+    -- que giró al encararse en el sitio de antes lo daba por atascado en el
+    -- primer cuadro).
+    d.giroTotal = 0
+    d.rumboPrevio = nil
+    if not mismo then
+        d.atasco = nil
     end
     d.desvio = 0
     d.finalEnviado = false

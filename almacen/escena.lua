@@ -23,6 +23,7 @@
 -- (cielo, niebla, oclusión, campo de visión) se devuelve al salir.
 
 require('almacen.almacen')
+local Disposicion = require('almacen.disposicion')
 local dream = require('lib.3DreamEngine')
 local Escalado = require('batalla.dream.escalado')
 local Controlador = require('batalla.controlador_camara')
@@ -35,6 +36,7 @@ require('almacen.robots.robot')
 local MundoRobot = require('almacen.robots.mundo')
 local Blancos = require('almacen.blancos')
 local VistaSensores = require('almacen.robots.vista_sensores')
+local UsoPC = require('almacen.pc.uso')
 
 local EscenaAlmacen = {}
 EscenaAlmacen.__index = EscenaAlmacen
@@ -280,6 +282,10 @@ function EscenaAlmacen.nueva(almacen)
     self:prepararPantalla()
     -- Sala de control: sus pantallas con los datos de la partida.
     self.sala = SalaControl.nueva(m.objeto, almacen)
+    -- Los ordenadores de los puestos se usan de verdad (E junto a uno).
+    self.usoPC = UsoPC.nuevo(self)
+    -- Lo que los robots escriben con print, a su depuración en los ordenadores.
+    require('almacen.pc.depuracion').engancharPrint()
     self:crearObjetos()
     -- La línea de montaje y la grúa de la fábrica (almacen/fabrica.lua).
     self.fabrica = Fabrica.nueva(m.objeto, self.carriles, self.polvorin.abierta)
@@ -349,6 +355,11 @@ function EscenaAlmacen.nueva(almacen)
     end
     self.sensores = VistaSensores.nueva()
     self.siguiendo = EscenaAlmacen.seguirAlEntrar
+    -- ALMACEN_SEGUIR=1: la cámara sigue al robot desde el principio (como la
+    -- tecla C), para las pruebas largas con capturas.
+    if os.getenv('ALMACEN_SEGUIR') then
+        self.siguiendo = true
+    end
     if EscenaAlmacen.fabricarAlEntrar then
         local n = math.min(EscenaAlmacen.fabricarAlEntrar, self.menuFabrica:maximo())
         if n > 0 then
@@ -428,9 +439,51 @@ function EscenaAlmacen:llenarDescarga()
     print(string.format('RECURSOS dinero=%.0f metal=%.0f petroleo=%.0f comida=%.0f obuses=%.0f', r.dinero, r.metal, r.petroleo, r.comida, r.obuses))
     local datos = love.filesystem.load('assets/almacen/objetos_datos.lua')()
     self.datosSuministros = datos
-    for _, tipo in ipairs(EscenaAlmacen.suministros) do
-        self.porLlegar[tipo] = math.floor(r[datos[tipo].recurso] or 0)
+    -- Las cajas como se dejaron la última vez (almacen/disposicion.lua) y,
+    -- al patio, solo lo que la nación tiene de más desde entonces.
+    local cajas = Disposicion.leer(self.almacen, self.almacen:getSemilla())
+    local puestas = Disposicion.poner(self, cajas, function(tipo, hueco)
+        return GestorObjetos.crear(tipo, hueco.x, hueco.y, hueco.z, hueco.rumbo)
+    end)
+    local hay = {}
+    for _, o in ipairs(puestas) do
+        local recurso = datos[o:getTipo()].recurso
+        hay[recurso] = (hay[recurso] or 0) + (o.cantidad or 0)
+        self.suministros[#self.suministros + 1] = o
     end
+    for _, tipo in ipairs(EscenaAlmacen.suministros) do
+        local recurso = datos[tipo].recurso
+        local falta = math.floor(r[recurso] or 0) - (hay[recurso] or 0)
+        if falta < 0 then
+            -- Lo gastó mientras no estabas: fuera cajas de ese recurso, las
+            -- últimas primero, hasta que cuadre (más adelante, los robots las
+            -- sacarán al muelle).
+            for k = #self.suministros, 1, -1 do
+                local o = self.suministros[k]
+                if falta < 0 and datos[o:getTipo()].recurso == recurso then
+                    if (o.cantidad or 0) <= -falta then
+                        falta = falta + (o.cantidad or 0)
+                        o:setSoltar()
+                        GestorObjetos.quitar(o)
+                        table.remove(self.suministros, k)
+                    else
+                        o.cantidad = o.cantidad + falta
+                        falta = 0
+                    end
+                end
+            end
+            falta = 0
+        end
+        hay[recurso] = (hay[recurso] or 0) + falta
+        self.porLlegar[tipo] = falta
+    end
+    print(string.format('ALMACEN %d cajas en su sitio de la última vez; llegan al patio: %s', #puestas, (function()
+        local t = {}
+        for _, tipo in ipairs(EscenaAlmacen.suministros) do
+            t[#t + 1] = tipo .. '=' .. (self.porLlegar[tipo] or 0)
+        end
+        return table.concat(t, ' ')
+    end)()))
     self:llegarTanda()
 end
 
@@ -595,7 +648,15 @@ end
 -- Bucle ----------------------------------------------------------------------
 
 function EscenaAlmacen:actualizar(dt)
+    self.relojGuardar = (self.relojGuardar or 0) + dt
+    if self.relojGuardar >= EscenaAlmacen.guardarCada then
+        self.relojGuardar = 0
+        self:guardarDisposicion()
+    end
+    local medir = os.getenv('ALMACEN_FPS') and love.timer.getTime
+    local t0 = medir and medir()
     MundoRobot.cuadro()
+    local tMundo = medir and medir()
     -- Tandas del patio: cuando el robot ha dejado sitio, llega otro camión.
     self.relojTanda = (self.relojTanda or 0) + dt
     if self.relojTanda > EscenaAlmacen.tandaCada and self.mesasDescarga and self:getPorLlegar() then
@@ -611,12 +672,19 @@ function EscenaAlmacen:actualizar(dt)
         end
     end
     local c = self.controlador
-    local dx, dz, dy = c:actualizar(dt, self.x, self.z, self.y, EscenaAlmacen.rapidez)
+    local dx, dz, dy = 0, 0, 0
+    if not self.usoPC:getActivo() then
+        dx, dz, dy = c:actualizar(dt, self.x, self.z, self.y, EscenaAlmacen.rapidez)
+    end
     local L = LIMITES
     self.x = math.max(L[1], math.min(L[2], self.x + dx))
     self.y = math.max(L[3], math.min(L[4], self.y + dy))
     self.z = math.max(L[5], math.min(L[6], self.z + dz))
+    local tS0 = medir and medir()
     self.sala:actualizar(dt)
+    self.usoPC:actualizar(dt)
+    local tS1 = medir and medir()
+    local tR, tB, tF = 0, 0, 0
     -- Grabando (almacen/video_robot.lua): pasos fijos y, en los viajes, más
     -- rápido.
     local pasos, paso = 1, dt
@@ -627,9 +695,16 @@ function EscenaAlmacen:actualizar(dt)
         -- ALMACEN_RAPIDO=N: robots y fábrica N veces más deprisa; FABRICA_RAPIDO=N,
         -- solo la línea de montaje (pruebas).
         local rapido = tonumber(os.getenv('ALMACEN_RAPIDO')) or 1
+        local a = medir and medir()
         GestorRobots.actualizar(paso * rapido)
+        local b = medir and medir()
         Blancos.actualizar(paso * rapido)
+        local c2 = medir and medir()
         self.fabrica:actualizar(paso * rapido * (tonumber(os.getenv('FABRICA_RAPIDO')) or 1))
+        if medir then
+            local d2 = medir()
+            tR, tB, tF = tR + b - a, tB + c2 - b, tF + d2 - c2
+        end
     end
     if os.getenv('ROBOT_DEPURAR') then
         self.relojDepurar = (self.relojDepurar or 0) + dt
@@ -685,16 +760,161 @@ function EscenaAlmacen:actualizar(dt)
             end)
         end
     end
+    -- ALMACEN_PRUEBA_PC=1 (con ALMACEN_CAMARA delante del puesto 2): usa el
+    -- ordenador como lo haría una persona, por los eventos de LÖVE (tecla E,
+    -- doble clic en una hoja, el menú, la terminal escribiendo, Esc) y hace
+    -- una foto en cada paso (pc_<n>.png en la carpeta de guardado).
+    if os.getenv('ALMACEN_PRUEBA_PC') then
+        self:pruebaPC(dt)
+    end
+    -- ALMACEN_FOTO='<s>,<archivo>': a los s segundos guarda una foto de la
+    -- pantalla (en la carpeta de guardado) y cierra el juego. Para revisar
+    -- de cerca lo que se pone en la nave (con ALMACEN_CAMARA).
+    local foto = os.getenv('ALMACEN_FOTO')
+    if foto and not self.fotoHecha then
+        local segundos, archivo = foto:match('^([%d%.]+),(.+)$')
+        self.relojFoto = (self.relojFoto or 0) + dt
+        if segundos and self.relojFoto >= tonumber(segundos) then
+            self.fotoHecha = true
+            love.graphics.captureScreenshot(function(imagen)
+                imagen:encode('png', archivo)
+                love.event.quit()
+            end)
+        end
+    end
     -- ALMACEN_FPS=1: apunta los FPS cada 10 s (para medir).
     if os.getenv('ALMACEN_FPS') then
+        -- Tiempo de cada parte (ms por cuadro, media de los 10 s).
+        local m = self.medidas or { n = 0, mundo = 0, sala = 0, robots = 0, blancos = 0, fabrica = 0 }
+        self.medidas = m
+        m.n = m.n + 1
+        m.mundo = m.mundo + (tMundo - t0)
+        m.sala = m.sala + (tS1 - tS0)
+        m.robots, m.blancos, m.fabrica = m.robots + tR, m.blancos + tB, m.fabrica + tF
         self.relojFps = (self.relojFps or 0) + dt
         if self.relojFps > 10 then
             self.relojFps = 0
             local s = self.estadisticas or {}
-            print(string.format('ALMACEN FPS %d, %d llamadas de dibujo, %d cambios de shader', love.timer.getFPS(), s.drawcalls or 0, s.shaderswitches or 0))
+            local k = 1000 / math.max(m.n, 1)
+            print(string.format('ALMACEN FPS %d, %d llamadas de dibujo, %d cambios de shader | ms: mundo %.1f sala %.1f robots %.1f blancos %.1f fabrica %.1f dibujo %.1f | memoria %.0f MB | objetos %d',
+                love.timer.getFPS(), s.drawcalls or 0, s.shaderswitches or 0, m.mundo * k, m.sala * k, m.robots * k, m.blancos * k, m.fabrica * k, (self.tDibujo or 0) * k,
+                collectgarbage('count') / 1024, #GestorObjetos.getObjetos()))
+            -- Las especializaciones que más tardan (robots/nucleo.lua).
+            local Robot = require('robots.nucleo').Robot
+            local lista = {}
+            for clave, t in pairs(Robot.tiempos or {}) do
+                lista[#lista + 1] = { clave, t * k }
+            end
+            table.sort(lista, function(a, b) return a[2] > b[2] end)
+            local partes = {}
+            for i = 1, math.min(6, #lista) do
+                partes[i] = string.format('%s %.1f', lista[i][1], lista[i][2])
+            end
+            print('ALMACEN ms por especializacion: ' .. table.concat(partes, ', '))
+            -- Lo que cada robot va acumulando (el dueño, 26-nov: «después de
+            -- una hora se ponen torpes»): mapa, memoria y atascos.
+            for _, r in ipairs(GestorRobots.getRobots()) do
+                local l = r.datos.lidar
+                local mapa = l and l.mapa
+                local ocupadas = 0
+                if mapa then
+                    for i = 0, mapa.ancho * mapa.alto - 1 do
+                        if mapa.celdas[i] > mapa.umbral then
+                            ocupadas = ocupadas + 1
+                        end
+                    end
+                end
+                local function contar(t)
+                    local n = 0
+                    for _ in pairs(t or {}) do
+                        n = n + 1
+                    end
+                    return n
+                end
+                local nav = r.datos.navegacion or {}
+                print(string.format('ALMACEN robot %s en (%.1f, %.1f) | ocupadas %d cambios %d pendientes %d tocadas %d | lidar %d conocidos %d | atascos %d choques %d | %s',
+                    tostring(r.tipo), r.x, r.y, ocupadas, mapa and mapa.cambios or 0,
+                    mapa and #mapa.ultimosCambios or 0, mapa and contar(mapa.tocadas) or 0,
+                    contar(l and l.objetos), contar(r.datos.mirada and r.datos.mirada.conocidos),
+                    nav.atascos or 0, r.datos.fisica and r.datos.fisica.choques or 0,
+                    tostring(r.getTarea and r:getTarea())))
+            end
+            Robot.tiempos = {}
+            self.medidas = nil
+            self.tDibujo = 0
         end
     end
     dream:update()
+end
+
+-- El guion de ALMACEN_PRUEBA_PC: { segundo, qué hace }.
+function EscenaAlmacen:pruebaPC(dt)
+    local Ordenador = require('almacen.pc.ordenador')
+    self.relojPrueba = (self.relojPrueba or 0) + dt
+    self.pasoPrueba = self.pasoPrueba or 1
+    -- De px del escritorio del PC a px de la ventana (como lo encaja uso.lua).
+    local function aVentana(x, y)
+        local W, H = love.graphics.getDimensions()
+        local s = math.min(W / Ordenador.ancho, H / Ordenador.alto)
+        return (W - Ordenador.ancho * s) / 2 + x * s, (H - Ordenador.alto * s) / 2 + y * s
+    end
+    local function clic(x, y, veces)
+        local wx, wy = aVentana(x, y)
+        love.event.push('mousemoved', wx, wy, 0, 0, false)
+        for k = 1, veces or 1 do
+            love.event.push('mousepressed', wx, wy, 1, false, k)
+            love.event.push('mousereleased', wx, wy, 1, false, k)
+        end
+    end
+    local function tecla(t)
+        love.event.push('keypressed', t, t, false)
+    end
+    local function escribir(texto)
+        love.event.push('textinput', texto)
+        tecla('return')
+    end
+    local fotos = 0
+    local function foto()
+        fotos = fotos + 1
+        local n = self.pasoPrueba
+        love.graphics.captureScreenshot('pc_' .. n .. '.png')
+        print('PRUEBA PC foto pc_' .. n .. '.png')
+    end
+    -- Iconos del escritorio: k-ésimo en (74, 24 + (k - 1) * 104 + 40);
+    -- 4 = Terminal, 6 = Robots. Un paso con función en vez de segundo
+    -- espera a que se cumpla (y los segundos siguientes cuentan desde ahí).
+    local function llevando()
+        return self.robot:getLlevando() ~= nil
+    end
+    -- Robots se abre en cascada en (184, 58), su área desde y = 92; en su
+    -- lista, trabajar.lua es la segunda fila (y = 170 + 30).
+    local guion = {
+        { 4, function() tecla('e') end },
+        { 5.5, function() clic(74, 24 + 5 * 104 + 40, 2) end }, -- Robots
+        { 7, function() clic(184 + 384, 92 + 215, 2) end }, -- trabajar.lua en el del almacén
+        { 15, foto },
+        { 16, function() clic(74, 24 + 3 * 104 + 40, 2) end }, -- Terminal
+        { 17, function() escribir('robot soldado ejecutar ~/guiones/patrulla.lua') end },
+        { 27, foto },
+        { 27.5, function() love.event.quit() end },
+    }
+    local paso = guion[self.pasoPrueba]
+    if not paso then
+        return
+    end
+    local listo
+    if type(paso[1]) == 'function' then
+        listo = paso[1]()
+        if listo then
+            self.relojPrueba = 0
+        end
+    else
+        listo = self.relojPrueba >= paso[1]
+    end
+    if listo then
+        paso[2]()
+        self.pasoPrueba = self.pasoPrueba + 1
+    end
 end
 
 function EscenaAlmacen:prepararCamara()
@@ -706,6 +926,13 @@ function EscenaAlmacen:prepararCamara()
 end
 
 function EscenaAlmacen:dibujar()
+    local tDibujo0 = os.getenv('ALMACEN_FPS') and love.timer.getTime()
+    -- Dentro de un ordenador su pantalla lo tapa todo: la sala no se pinta.
+    if self.usoPC:getTapaTodo() then
+        love.graphics.clear(0, 0, 0, 1)
+        self.usoPC:dibujar()
+        return
+    end
     self:mirarMisiles()
     self:prepararCamara()
     dream:prepare()
@@ -747,6 +974,11 @@ function EscenaAlmacen:dibujar()
     Escalado.presentar(dream)
     -- El panel de sensores y el mapa: del robot con el que se trabaja.
     local delPanel = self:getRobotDelPanel()
+    -- En el vídeo de la sala (ALMACEN_VIDEO_SALA), sin paneles ni rótulos.
+    local videoSala = EscenaAlmacen.grabacion and require('almacen.video_robot').sala
+    if videoSala then
+        return
+    end
     self.sensores:dibujar(delPanel)
     -- Los disparos del soldado (siempre a la vista, con o sin sensores).
     for _, r in ipairs(GestorRobots.getRobots()) do
@@ -758,11 +990,17 @@ function EscenaAlmacen:dibujar()
             self.sensores:dibujarOjosDe(r)
         end
     end
-    self:dibujarRotulo()
-    self.menuFabrica:dibujar()
+    if not self.usoPC:getActivo() then
+        self:dibujarRotulo()
+        self.menuFabrica:dibujar()
+    end
+    self.usoPC:dibujar()
     -- Las del cuadro (ALMACEN_FPS las enseña): antes de presentar, al final del dibujo.
     if os.getenv('ALMACEN_FPS') then
         self.estadisticas = love.graphics.getStats(self.estadisticas)
+    end
+    if tDibujo0 then
+        self.tDibujo = (self.tDibujo or 0) + love.timer.getTime() - tDibujo0
     end
 end
 
@@ -799,6 +1037,10 @@ end
 
 --- Devuelve 'salir' con Esc.
 function EscenaAlmacen:tecla(tecla)
+    -- Usando un ordenador, las teclas son suyas (Esc sale de él, no del almacén).
+    if self.usoPC:tecla(tecla) then
+        return
+    end
     -- El menú de la fábrica (E junto a la mesa; con él abierto, Esc solo lo cierra).
     if self.menuFabrica:tecla(tecla) then
         return
@@ -830,6 +1072,9 @@ function EscenaAlmacen:tecla(tecla)
 end
 
 function EscenaAlmacen:pulsar(x, y, boton)
+    if self.usoPC:raton('pulsar', x, y, boton) then
+        return
+    end
     if boton == 1 and self.menuFabrica:clic(x, y) then
         return
     end
@@ -838,20 +1083,34 @@ function EscenaAlmacen:pulsar(x, y, boton)
     end
 end
 
-function EscenaAlmacen:soltar(_, _, boton)
+function EscenaAlmacen:soltar(x, y, boton)
+    if self.usoPC:raton('soltar', x, y, boton) then
+        return
+    end
     if boton == 2 then
         self.mirando = false
     end
 end
 
-function EscenaAlmacen:mover(_, _, dx, dy)
+function EscenaAlmacen:mover(x, y, dx, dy)
+    if self.usoPC:raton('mover', x, y) then
+        return
+    end
     if self.mirando then
         self.controlador:mirar(dx, dy)
     end
 end
 
 function EscenaAlmacen:rueda(dy)
+    if self.usoPC:getActivo() then
+        return
+    end
     self.controlador:empujar(dy * 1.5)
+end
+
+--- Texto escrito (love.textinput): para el ordenador que se usa.
+function EscenaAlmacen:texto(t)
+    self.usoPC:texto(t)
 end
 
 function EscenaAlmacen:foco(enfocada)
@@ -863,6 +1122,24 @@ end
 
 function EscenaAlmacen:redimensionar()
     dream:init()
+end
+
+-- Cada cuánto se apunta dónde está cada caja (también al salir y al cerrar
+-- el juego): si el juego se cierra de golpe, se pierde poco.
+EscenaAlmacen.guardarCada = 30
+
+--- Apunta dónde está cada caja ahora (almacen/disposicion.lua).
+function EscenaAlmacen:guardarDisposicion()
+    -- Con las cajas, lo de los ordenadores de la sala.
+    if self.sala then
+        self.sala:guardarOrdenadores()
+    end
+    if not (self.almacen and self.filas) then
+        return
+    end
+    local cajas = Disposicion.tomar(self, GestorObjetos.getObjetos(), EscenaAlmacen.suministros)
+    Disposicion.guardar(self.almacen, self.almacen:getSemilla(), cajas)
+    print(string.format('ALMACEN guardadas %d cajas en su sitio', #cajas))
 end
 
 --- Devuelve el motor como lo tenía la batalla.
@@ -886,6 +1163,7 @@ function EscenaAlmacen:cerrar()
         ambiente:stop()
     end
     self.sala:cerrar()
+    self:guardarDisposicion()
     GestorRobots.vaciar()
     GestorObjetos.vaciar()
     if self.lienzo then

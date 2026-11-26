@@ -227,6 +227,10 @@ function Gestor:crear(tipo, x, y, rumbo, extra)
     -- Vehículos: `inclinar = { largo, ancho }` m, se apoyan en el terreno
     -- por sus cuatro lados (lo usa la raíz de cada escena).
     robot.inclinar = definicion.inclinar
+    -- Las especializaciones de su trabajo (`trabajo = { ... }` en el tipo):
+    -- las que un guion de la sala sustituye (almacen/robots/especializaciones/
+    -- guion.lua).
+    robot.trabajo = definicion.trabajo
     -- Distancias de las copias de lejos propias (m): un avión de 87 m no
     -- cambia de copia donde un robot de 1,85 m.
     robot.lodDistancias = definicion.lodDistancias
@@ -295,15 +299,32 @@ end
 
 -- Robot: lo común ------------------------------------------------------------------
 
+-- Medir (almacén con ALMACEN_FPS): segundos por especialización y tipo,
+-- `Robot.tiempos[tipo .. '.' .. especialización]`; nil = no se mide.
+Robot.tiempos = nil
+
 function Robot:llamar(evento, ...)
+    local tiempos = Robot.tiempos
+    -- El robot que está corriendo su código ahora (lo que escriba con print
+    -- va a su depuración: almacen/pc/depuracion.lua).
+    local antes = Robot.enCurso
+    Robot.enCurso = self
     for _, e in ipairs(self.especializaciones) do
         local f = e.tabla[evento]
         if f then
             self.actual = e.nombre
-            f(self, ...)
+            if tiempos then
+                local t0 = love.timer.getTime()
+                f(self, ...)
+                local clave = tostring(self.tipo) .. '.' .. e.nombre
+                tiempos[clave] = (tiempos[clave] or 0) + love.timer.getTime() - t0
+            else
+                f(self, ...)
+            end
         end
     end
     self.actual = nil
+    Robot.enCurso = antes
 end
 
 --- Calcula la matriz de cada pieza (la raíz la pone la escena).

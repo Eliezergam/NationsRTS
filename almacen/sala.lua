@@ -8,9 +8,9 @@
 --   * `pantallaNacion`: la nación de la partida (nombre, capital, poder,
 --     nivel, día y los cuatro recursos).
 --   * `pantallaArsenal`: los misiles del almacén.
---   * `pantallasPuestos`: los 18 monitores de los 6 puestos, en un atlas de
---     6 x 3 (columna = puesto, fila = monitor de izquierda a derecha):
---     polvorín, recursos y noticias, en distinto orden en cada puesto.
+--   * `pantallaPC1`..`pantallaPC6`: el monitor de cada puesto, un ordenador
+--     propio con su escritorio y sus programas (almacen/pc/ordenador.lua). Lo
+--     que tiene abierto cada uno lo guarda el almacén entre visitas.
 --   * `ledsServidores`: cada luz de los armarios es un píxel de una imagen
 --     de 32 x 18 que parpadea.
 --
@@ -18,6 +18,9 @@
 -- (`getMisiles`, `getCapacidad` y `getPartida`): nada está inventado.
 
 local dream = require('lib.3DreamEngine')
+local Dibujo = require('almacen.pc.dibujo')
+local Guardado = require('almacen.pc.guardado')
+local Ordenador = require('almacen.pc.ordenador')
 
 local SalaControl = {}
 SalaControl.__index = SalaControl
@@ -35,31 +38,23 @@ SalaControl.brilloMonitores = 1.8
 SalaControl.brilloLeds = 5.0
 
 local LEDS_ANCHO, LEDS_ALTO, LEDS = 32, 18, 560
-local CELDA_ANCHO, CELDA_ALTO = 320, 192
 
-local VERDE = { 0.24, 0.9, 0.42 }
-local COLOR_ESTADO = {
-    holgado = { 0.3, 0.85, 0.4 },
-    justo = { 0.95, 0.8, 0.25 },
-    escasez = { 1.0, 0.55, 0.15 },
-    crisis = { 1.0, 0.27, 0.2 },
-}
-local TEXTO_ESTADO = { holgado = 'BIEN', justo = 'JUSTO', escasez = 'ESCASEZ', crisis = 'CRISIS' }
-local COLOR_RECURSO = {
-    metal = { 0.73, 0.77, 0.8 },
-    petroleo = { 0.4, 0.45, 1.0 },
-    comida = { 0.91, 0.7, 0.23 },
-    dinero = { 0.35, 0.77, 0.42 },
-}
+local VERDE = Dibujo.verde
+local COLOR_ESTADO = Dibujo.colorEstado
+local TEXTO_ESTADO = Dibujo.textoEstado
+local COLOR_RECURSO = Dibujo.colorRecurso
+local miles = Dibujo.miles
 
-local function miles(n)
-    local s = tostring(math.floor((n or 0) + 0.5))
-    local signo = ''
-    if s:sub(1, 1) == '-' then
-        signo, s = '-', s:sub(2)
-    end
-    return signo .. s:reverse():gsub('(%d%d%d)', '%1.'):reverse():gsub('^%.', '')
-end
+-- Lo que tiene abierto cada ordenador la primera vez (después, lo que se
+-- dejó): cada puesto con lo suyo.
+local INICIO_PC = {
+    { { 'hoja', 170, 30, 900, 610, { archivo = '/red/almacen/polvorin.hoja' } } },
+    { { 'hoja', 220, 60, 820, 540 } },
+    { { 'hoja', 150, 40, 980, 560, { archivo = '/red/almacen/recursos.hoja' } } },
+    { { 'terminal', 200, 70, 860, 520 } },
+    { { 'hoja', 150, 30, 720, 470, { archivo = '/red/almacen/recursos.hoja' } }, { 'terminal', 640, 250, 600, 400 } },
+    {},
+}
 
 --- Material emisivo con `textura` para todas las mallas de `pieza`.
 local function ponerPantalla(pieza, nombre, textura, brillo)
@@ -90,7 +85,23 @@ function SalaControl.nueva(objeto, almacen)
     }
     self.nacion = g.newCanvas(768, 436)
     self.arsenal = g.newCanvas(768, 436)
-    self.puestos = g.newCanvas(CELDA_ANCHO * 6, CELDA_ALTO * 3)
+    -- Los ordenadores de los puestos (lo que se dejó abierto, del almacén).
+    -- Si el juego se cerró, lo que quedó guardado (almacen/pc/guardado.lua).
+    almacen.ordenadores = almacen.ordenadores or Guardado.leer(almacen, almacen:getSemilla()) or {}
+    self.almacen = almacen
+    self.ordenadores = {}
+    for k = 1, 6 do
+        local nuevo = not almacen.ordenadores[k]
+        local pc = Ordenador.nuevo(k, almacen.ordenadores[k])
+        almacen.ordenadores[k] = pc.datos
+        if nuevo then
+            for _, v in ipairs(INICIO_PC[k] or {}) do
+                pc:abrir(v[1], v[2], v[3], v[4], v[5], v[6])
+            end
+        end
+        self.ordenadores[k] = pc
+        ponerPantalla(self.objetos['pantallaPC' .. k], 'pantallaPC' .. k .. 'Viva', pc:getLienzo(), SalaControl.brilloMonitores)
+    end
     self.ledsDatos = love.image.newImageData(LEDS_ANCHO, LEDS_ALTO)
     self.leds = g.newImage(self.ledsDatos)
     self.leds:setFilter('nearest', 'nearest')
@@ -99,7 +110,6 @@ function SalaControl.nueva(objeto, almacen)
     ponerPantalla(self.objetos.pantallaMapa, 'pantallaMapaViva', self.mapa, SalaControl.brilloMuro)
     ponerPantalla(self.objetos.pantallaNacion, 'pantallaNacionViva', self.nacion, SalaControl.brilloMuro)
     ponerPantalla(self.objetos.pantallaArsenal, 'pantallaArsenalViva', self.arsenal, SalaControl.brilloMuro)
-    ponerPantalla(self.objetos.pantallasPuestos, 'pantallasPuestosVivas', self.puestos, SalaControl.brilloMonitores)
     ponerPantalla(self.objetos.ledsServidores, 'ledsServidoresVivos', self.leds, SalaControl.brilloLeds)
     -- Vidrio de los tabiques: transparente (pasada de alfa del motor), apenas
     -- teñido y sin desviar lo de detrás. Una luna plana y fina no deforma lo
@@ -133,6 +143,9 @@ end
 
 function SalaControl:actualizar(dt)
     self.reloj = self.reloj + dt
+    for _, pc in ipairs(self.ordenadores) do
+        pc:actualizar(dt)
+    end
     if self.reloj >= self.proximo then
         self.proximo = self.reloj + SalaControl.refresco
         self:pintar()
@@ -147,7 +160,7 @@ end
 -- final, va en la pasada de alfa).
 function SalaControl:dibujar()
     local o = self.objetos
-    for _, nombre in ipairs({ 'pantallaMapa', 'pantallaNacion', 'pantallaArsenal', 'pantallasPuestos', 'ledsServidores', 'vidriosSala' }) do
+    for _, nombre in ipairs({ 'pantallaMapa', 'pantallaNacion', 'pantallaArsenal', 'pantallaPC1', 'pantallaPC2', 'pantallaPC3', 'pantallaPC4', 'pantallaPC5', 'pantallaPC6', 'ledsServidores', 'vidriosSala' }) do
         if o[nombre] then
             dream:draw(o[nombre])
         end
@@ -155,8 +168,11 @@ function SalaControl:dibujar()
 end
 
 function SalaControl:cerrar()
-    for _, lienzo in ipairs({ self.nacion, self.arsenal, self.puestos }) do
+    for _, lienzo in ipairs({ self.nacion, self.arsenal }) do
         lienzo:release()
+    end
+    for _, pc in ipairs(self.ordenadores) do
+        pc:cerrar()
     end
 end
 
@@ -173,50 +189,28 @@ function SalaControl:pintar()
     self:pintarNacion(partida, 768, 436)
     g.setCanvas(self.arsenal)
     self:pintarArsenal(misiles, capacidad, 768, 436)
-    g.setCanvas(self.puestos)
-    g.clear(0, 0, 0, 1)
-    local orden = { 'polvorin', 'recursos', 'noticias' }
-    for puesto = 0, 5 do
-        for monitor = 0, 2 do
-            local tipo = orden[(monitor + puesto) % 3 + 1]
-            g.push()
-            g.translate(puesto * CELDA_ANCHO, monitor * CELDA_ALTO)
-            g.setScissor(puesto * CELDA_ANCHO, monitor * CELDA_ALTO, CELDA_ANCHO, CELDA_ALTO)
-            if tipo == 'polvorin' then
-                self:pintarPolvorin(misiles, capacidad, CELDA_ANCHO, CELDA_ALTO)
-            elseif tipo == 'recursos' then
-                self:pintarRecursos(partida, CELDA_ANCHO, CELDA_ALTO)
-            else
-                self:pintarNoticias(partida, CELDA_ANCHO, CELDA_ALTO)
-            end
-            g.setScissor()
-            g.pop()
-        end
-    end
     g.pop()
-end
-
-local function fondo(w, h, r, gr, b)
-    local g = love.graphics
-    g.setColor(r, gr, b, 1)
-    g.rectangle('fill', 0, 0, w, h)
-end
-
---- Símbolo de radiactividad (trébol) en (x, y) de radio r sobre amarillo.
-local function trebol(x, y, r)
-    local g = love.graphics
-    g.setColor(0.91, 0.77, 0.28)
-    g.circle('fill', x, y, r * 1.18)
-    g.setColor(0.05, 0.05, 0.05)
-    for k = 0, 2 do
-        local a = -math.pi / 2 + k * 2 * math.pi / 3 - math.pi / 6
-        g.arc('fill', x, y, r, a, a + math.pi / 3)
+    self.datosPC = { partida = partida, misiles = misiles, capacidad = capacidad }
+    for k in ipairs(self.ordenadores) do
+        self:pintarOrdenador(k)
     end
-    g.setColor(0.91, 0.77, 0.28)
-    g.circle('fill', x, y, r * 0.3)
-    g.setColor(0.05, 0.05, 0.05)
-    g.circle('fill', x, y, r * 0.18)
 end
+
+--- Guarda en disco lo de los ordenadores (ventanas y carpetas personales).
+function SalaControl:guardarOrdenadores()
+    Guardado.guardar(self.almacen, self.almacen:getSemilla(), self.almacen.ordenadores)
+end
+
+--- Vuelve a pintar el ordenador `k` con los datos de la última lectura (el
+-- que se está usando se pinta cada cuadro: almacen/pc/uso.lua).
+function SalaControl:pintarOrdenador(k)
+    local d = self.datosPC or {}
+    local ctx = { partida = d.partida, misiles = d.misiles or 0, capacidad = d.capacidad or 0, reloj = self.reloj }
+    self.ordenadores[k]:pintar(ctx)
+end
+
+local fondo = Dibujo.fondo
+local trebol = Dibujo.trebol
 
 function SalaControl:pintarNacion(p, w, h)
     local g = love.graphics
@@ -294,86 +288,6 @@ function SalaControl:pintarArsenal(misiles, capacidad, w, h)
     g.setColor(color[1] * parpadeo, color[2] * parpadeo, color[3] * parpadeo)
     g.setFont(L.dato)
     g.print(estado, 28, h - 46)
-end
-
-function SalaControl:pintarPolvorin(misiles, capacidad, w, h)
-    local g = love.graphics
-    local L = self.letras
-    fondo(w, h, 0.03, 0.06, 0.035)
-    trebol(34, 34, 18)
-    g.setColor(0.49, 1, 0.42)
-    g.setFont(L.medio)
-    g.print('POLVORÍN', 64, 14)
-    g.setColor(misiles == 0 and { 1, 0.35, 0.28 } or { 1, 1, 1 })
-    g.setFont(L.titulo)
-    g.printf(misiles .. '/' .. capacidad, 0, 14, w - 14, 'right')
-    local columnas = 10
-    local cw = (w - 28) / columnas
-    local ch = (h - 76) / math.ceil(capacidad / columnas)
-    for k = 0, capacidad - 1 do
-        local c, f = k % columnas, math.floor(k / columnas)
-        g.setColor(k < misiles and { 0.17, 0.54, 0.24 } or { 0.1, 0.14, 0.12 })
-        g.rectangle('fill', 14 + c * cw + 1, 64 + f * ch + 1, cw - 3, ch - 3)
-    end
-end
-
-function SalaControl:pintarRecursos(p, w, h)
-    local g = love.graphics
-    local L = self.letras
-    fondo(w, h, 0.035, 0.045, 0.06)
-    g.setColor(0.31, 0.76, 1)
-    g.setFont(L.medio)
-    g.print('RECURSOS', 14, 10)
-    if not p then
-        return
-    end
-    g.setColor(0.62, 0.7, 0.74)
-    g.setFont(L.chico)
-    g.printf('DÍA ' .. p.dia, 0, 20, w - 14, 'right')
-    for k, r in ipairs(p.recursos) do
-        local y = 56 + (k - 1) * 33
-        g.setColor(0.85, 0.89, 0.86)
-        g.setFont(L.chico)
-        g.print(r.nombre:upper(), 14, y)
-        g.setColor(COLOR_ESTADO[r.estado] or VERDE)
-        g.printf(miles(r.cantidad), 0, y, w - 14, 'right')
-        g.setColor(0.11, 0.15, 0.17)
-        g.rectangle('fill', 14, y + 20, w - 28, 7)
-        g.setColor(COLOR_RECURSO[r.tipo])
-        local f = r.tope and r.tope > 0 and math.min(1, r.cantidad / r.tope) or 0
-        g.rectangle('fill', 14, y + 20, (w - 28) * f, 7)
-    end
-end
-
-function SalaControl:pintarNoticias(p, w, h)
-    local g = love.graphics
-    local L = self.letras
-    fondo(w, h, 0.05, 0.045, 0.03)
-    g.setColor(0.91, 0.77, 0.28)
-    g.setFont(L.medio)
-    g.print('NOTICIAS', 14, 10)
-    if not p then
-        return
-    end
-    g.setFont(L.chico)
-    local y = 52
-    local alto = L.chico:getHeight()
-    for _, n in ipairs(p.noticias) do
-        local _, lineas = L.chico:getWrap(n.texto, w - 70)
-        if y + alto * #lineas > h - 6 then
-            break
-        end
-        g.setColor(0.55, 0.6, 0.6)
-        g.print('D' .. (n.dia or 0), 14, y)
-        local c = n.color or { 1, 1, 1 }
-        g.setColor(c[1], c[2], c[3])
-        g.printf(n.texto, 56, y, w - 70, 'left')
-        y = y + alto * #lineas + 6
-    end
-    if #p.noticias == 0 then
-        g.setColor(0.55, 0.6, 0.6)
-        g.print('Sin noticias', 14, y)
-    end
 end
 
 --- Las luces de los servidores: cada una se enciende y se apaga a su ritmo.

@@ -829,7 +829,7 @@ XCENTRO_FABRICA = (XMIN + XFABRICA) / 2
 # décimas: x 10 a metros) mide 8,32 m con el origen en la cola; sus
 # secciones: cola con aletas de 0 a 1,1 m, motor de 1,1 a 3,9, guiado y carga
 # de 3,9 a 7,0 y ojiva de 7,0 a 8,32.
-MISIL = os.path.join(RAIZ, 'assets', 'modelos3d', 'misil_synty4.glb')
+MISIL = os.environ.get('ALMACEN_MISIL') or os.path.join(RAIZ, 'assets', 'modelos3d', 'misil_synty4.glb')
 MISIL_LARGO = 8.32
 MISIL_RADIO = 0.224
 X_MOTOR = 3.9
@@ -1623,14 +1623,14 @@ def crearFabrica(m):
 # Sala de control --------------------------------------------------------------
 
 # Sala acristalada de 12 x 11,5 m en las primeras plazas del lado +y (la
-# maqueta aprobada por el dueño el 2026-11-16): 6 puestos con 3 monitores,
-# muro de 6 pantallas (3 x 2), 4 armarios de servidores y bandeja de cables a
+# maqueta aprobada por el dueño el 2026-11-16): 6 puestos (un monitor cada uno desde
+# el 26-nov), muro de 6 pantallas (3 x 2), 4 armarios de servidores y bandeja de cables a
 # 4,2 m. Lo que se ve en las pantallas lo pinta el juego (almacen/sala.lua):
 #   * `pantallaMapa`: las 4 pantallas de la izquierda del muro, una sola
 #     imagen (UV de cuartos);
 #   * `pantallaNacion` y `pantallaArsenal`: las dos de la derecha;
-#   * `pantallasPuestos`: los 18 monitores en un atlas de 6 x 3 (columna =
-#     puesto, fila = monitor de izquierda a derecha);
+#   * `pantallaPC1`..`pantallaPC6`: el monitor de cada puesto, un ordenador
+#     independiente (UV de 0 a 1; almacen/pc/);
 #   * `ledsServidores`: cada luz de los armarios es un píxel de un lienzo de
 #     LEDS_ANCHO x LEDS_ALTO.
 SALA_X0 = 2.0
@@ -1752,8 +1752,8 @@ def crearTabique(m, piezas, vidrios, coleccion, x0, y0, x1, y1, puertaX=None):
 
 
 def crearPuesto(m, piezas, coleccion, x, y, indice, monitores):
-    """Mesa de 1,8 x 0,8 m mirando a +y (el operador en y - 0,75), torre, tres
-    monitores (el del centro de frente y los laterales girados) y silla."""
+    """Mesa de 1,8 x 0,8 m mirando a +y (el operador en y - 0,75), torre, un
+    monitor de frente (su pantalla va a `monitores`) y silla."""
     zm = SALA_SUELO + 0.74
     piezas.append(mallaCaja('tablero', (x, y, zm), (1.8, 0.8, 0.04), m['mesaSala'], coleccion))
     for dx in (-0.87, 0.87):
@@ -1762,28 +1762,16 @@ def crearPuesto(m, piezas, coleccion, x, y, indice, monitores):
     # Torre bajo la mesa, con el piloto encendido.
     piezas.append(mallaCaja('torre', (x + 0.6, y - 0.02, SALA_SUELO + 0.24), (0.2, 0.45, 0.46), m['carcasa'], coleccion))
     piezas.append(mallaCaja('piloto', (x + 0.6, y - 0.246, SALA_SUELO + 0.4), (0.02, 0.004, 0.02), m['ledFijo'], coleccion))
-    # Monitores 24": 0,55 x 0,33 de imagen.
-    for k in (-1, 0, 1):
-        angulo = -k * 0.35
-        mira = (math.sin(angulo), -math.cos(angulo))
-        cx = x + k * 0.58
-        cy = y + 0.22 - abs(k) * 0.08
-        cz = zm + 0.32
-        carcasa = mallaCaja('monitor', (0, 0, 0), (0.58, 0.035, 0.36), m['carcasa'], coleccion)
-        carcasa.rotation_euler = (0, 0, angulo)
-        carcasa.location = (cx, cy, cz)
-        piezas.append(carcasa)
-        brazo = mallaCaja('pieMonitor', (0, 0, 0), (0.05, 0.04, 0.28), m['carcasa'], coleccion)
-        brazo.rotation_euler = (0, 0, angulo)
-        brazo.location = (cx - mira[0] * 0.05, cy - mira[1] * 0.05, zm + 0.15)
-        piezas.append(brazo)
-        base = mallaCaja('baseMonitor', (0, 0, 0), (0.22, 0.16, 0.015), m['carcasa'], coleccion)
-        base.rotation_euler = (0, 0, angulo)
-        base.location = (cx - mira[0] * 0.05, cy - mira[1] * 0.05, zm + 0.028)
-        piezas.append(base)
-        fila = k + 1
-        uv = (indice / 6, 1 - (fila + 1) / 3, (indice + 1) / 6, 1 - fila / 3)
-        monitores.append((esquinasPantalla((cx, cy, cz), mira, 0.55, 0.33, 0.0185), uv))
+    # Un monitor de 27" (0,60 x 0,34 de imagen) de frente: cada puesto es un
+    # ordenador propio con su pantalla (el dueño, 26-nov: «quiero que cada pc
+    # sea independiente»; antes eran tres de 24" por puesto con lo mismo).
+    cx, cy, cz = x, y + 0.2, zm + 0.34
+    mira = (0.0, -1.0)
+    carcasa = mallaCaja('monitor', (cx, cy, cz), (0.64, 0.035, 0.39), m['carcasa'], coleccion)
+    piezas.append(carcasa)
+    piezas.append(mallaCaja('pieMonitor', (cx, cy + 0.05, zm + 0.15), (0.05, 0.04, 0.28), m['carcasa'], coleccion))
+    piezas.append(mallaCaja('baseMonitor', (cx, cy + 0.05, zm + 0.028), (0.24, 0.17, 0.015), m['carcasa'], coleccion))
+    monitores.append((esquinasPantalla((cx, cy, cz), mira, 0.60, 0.34, 0.0185), (0, 0, 1, 1)))
     # Teclado y ratón.
     piezas.append(mallaCaja('teclado', (x, y - 0.18, zm + 0.03), (0.45, 0.15, 0.02), m['carcasa'], coleccion))
     piezas.append(mallaCaja('raton', (x + 0.32, y - 0.18, zm + 0.03), (0.06, 0.1, 0.03), m['carcasa'], coleccion))
@@ -1845,14 +1833,14 @@ def crearSalaControl(m):
     zr = SALA_SUELO + SALA_ALTO + 0.3
     piezas.append(mallaCaja('rotuloSala', (SALA_PUERTA_X, SALA_Y0 - 0.03, zr), (2.4, 0.04, 0.45), m['gruaAmarilla'], col))
     texto('textoSala', 'SALA DE CONTROL', 0.26, m['letraNegra'], col, (SALA_PUERTA_X, SALA_Y0 - 0.055, zr - 0.08), (math.pi / 2, 0, 0))
-    # Puestos.
-    monitores = []
+    # Puestos: cada uno un ordenador con su pantalla `pantallaPC1`..6.
     indice = 0
     for yf in SALA_FILAS:
         for xp in SALA_PUESTOS_X:
+            monitores = []
             crearPuesto(m, piezas, col, xp, yf, indice, monitores)
             indice += 1
-    mallaPantallas('pantallasPuestos', monitores, m['pantalla'], col)
+            mallaPantallas('pantallaPC%d' % indice, monitores, m['pantalla'], col)
     # Muro de pantallas: bastidor de acero delante del pilar y 6 pantallas.
     zc = SALA_SUELO + 2.3
     piezas.append(mallaCaja('bastidorMuro', (MURO_X, MURO_Y + 0.12, zc), (3 * (PANTALLA_ANCHO + 0.06) + 0.2, 0.1, 2 * (PANTALLA_ALTO + 0.06) + 0.2), m['estructura'], col))
@@ -2146,7 +2134,7 @@ def exportarJuego(ruta):
       * `pantallaContador`, con UV de 0 a 1 en su cara: el juego le pinta los
         misiles en vivo;
       * la sala de control: `pantallaMapa`, `pantallaNacion`,
-        `pantallaArsenal`, `pantallasPuestos` y `ledsServidores` (con su UV,
+        `pantallaArsenal`, `pantallaPC1`..`pantallaPC6` y `ledsServidores` (con su UV,
         las pinta el juego) y `vidriosSala` (transparente);
       * `estatico`: todo lo demás junto (o `estatico_<i>_<j>`, en celdas de
         CELDA_ESTATICO m, si se activa; ver allí lo medido).
@@ -2204,7 +2192,7 @@ def exportarJuego(ruta):
     pantalla.data.materials.append(materialLiso('pantallaContador', (0.02, 0.03, 0.025), 0.3))
     # Pantallas de la sala de control: cada una con su material, que el juego
     # cambia por el suyo con la imagen viva (almacen/sala.lua).
-    vivas = ('pantallaMapa', 'pantallaNacion', 'pantallaArsenal', 'pantallasPuestos', 'ledsServidores')
+    vivas = ('pantallaMapa', 'pantallaNacion', 'pantallaArsenal', 'ledsServidores') + tuple('pantallaPC%d' % k for k in range(1, 7))
     for nombre in vivas:
         objeto = bpy.data.objects.get(nombre)
         if objeto:

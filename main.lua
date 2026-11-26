@@ -4699,6 +4699,10 @@ function love.textinput(texto)
         inicio.login:texto(texto)
         return
     end
+    if almacenVista then
+        almacenVista:texto(texto)
+        return
+    end
     arsenal:texto(texto)
 end
 
@@ -4877,6 +4881,10 @@ function love.quit()
     if inicio.saliendo or not inicio.preguntar then
         -- Lo que han aprendido los robots (robots/conocimiento.lua).
         require('robots.conocimiento').guardarTodas()
+        -- Dónde quedó cada caja del almacén (almacen/disposicion.lua).
+        if almacenVista and almacenVista.guardarDisposicion then
+            almacenVista:guardarDisposicion()
+        end
         return false
     end
     if not inicio.dialogo.abierto then

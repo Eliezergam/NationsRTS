@@ -299,6 +299,10 @@ function Robot:setCoger(objeto)
         d.agarres[#d.agarres + 1] = { lado = m.lado, punto = m.punto['local'] }
     end
     d.giro = objeto:getRumbo() - self.rumbo
+    -- De dónde lo coge: si le quitan el trabajo con él en las manos, vuelve
+    -- ahí (guion.lua).
+    local mueble, numero = objeto:getApoyadoEn()
+    d.origen = mueble and { mueble, numero } or nil
     objeto:setSoltar()
     objeto.llevadoPor = self
     return true
@@ -311,7 +315,7 @@ function Robot:setDejar(mueble, numero)
     if not o then
         return
     end
-    d.objeto, d.agarres = nil, nil
+    d.objeto, d.agarres, d.origen = nil, nil, nil
     o.llevadoPor = nil
     o:setApoyar(mueble, numero)
 end

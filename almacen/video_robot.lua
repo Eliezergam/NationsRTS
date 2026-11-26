@@ -16,6 +16,20 @@ VideoRobot.maximo = 30 * 300 -- cuadros (5 min de vídeo como mucho)
 -- ALMACEN_VIDEO_SOLDADO=<s>: el vídeo sigue al soldado que entrena, a
 -- velocidad real (sin x3) y dura esos segundos.
 VideoRobot.soldado = tonumber(os.getenv('ALMACEN_VIDEO_SOLDADO') or '')
+-- ALMACEN_VIDEO_SALA=<s>: recorrido por la sala de control a velocidad real
+-- durante esos segundos (los ordenadores mientras los robots trabajan): el
+-- puesto 2 con Robots y la depuración de cada robot, el 5 con el Depurador.
+VideoRobot.sala = tonumber(os.getenv('ALMACEN_VIDEO_SALA') or '')
+-- Puntos del recorrido: { segundo, cámara x, y, z, mira a x, y, z } (m del
+-- almacén; los monitores miran a -y, la fila de delante en y = 8,78).
+VideoRobot.recorridoSala = {
+    { 0, 3.4, 7.0, 1.75, 8.5, 11.4, 1.1 },
+    { 8, 10.8, 7.0, 1.75, 5.8, 11.4, 1.1 },
+    { 13, 7.2, 7.7, 1.35, 7.2, 8.8, 1.2 },
+    { 17, 7.2, 8.42, 1.2, 7.2, 8.8, 1.2 },
+    { 27, 7.2, 8.42, 1.2, 7.2, 8.8, 1.2 },
+    { 34, 7.2, 7.3, 1.65, 7.2, 11.4, 1.15 },
+}
 
 function VideoRobot.nuevo(ruta)
     local self = setmetatable({}, VideoRobot)
@@ -27,7 +41,7 @@ end
 
 --- Cuántos pasos de simulación y de cuánto en este cuadro.
 function VideoRobot:pasos(escena)
-    if VideoRobot.soldado then
+    if VideoRobot.soldado or VideoRobot.sala then
         self.rapido = false
         return 1, 1 / VideoRobot.fps
     end
@@ -110,7 +124,55 @@ end
 
 --- Pone la cámara: detrás y a un lado mientras viaja; de cerca, por delante
 -- y de lado, mientras coge o deja algo.
+-- Prepara los ordenadores del vídeo de la sala (una vez).
+local function prepararSala(escena)
+    local Depurador = require('almacen.pc.programas.depurador')
+    local pc = escena.sala.ordenadores[2]
+    pc.datos.ventanas = {}
+    pc:abrir('robots', 14, 14, 600, 646)
+    -- Las dos depuraciones a la derecha, una encima de otra (sin taparse).
+    local a = Depurador.abrirPara(pc, 'almacen')
+    a.x, a.y, a.w, a.h = 624, 14, 642, 318
+    local b = Depurador.abrirPara(pc, 'soldado')
+    b.x, b.y, b.w, b.h = 624, 342, 642, 318
+    local otro = escena.sala.ordenadores[5]
+    otro.datos.ventanas = {}
+    otro:abrir('depurador', 40, 30, 1180, 630)
+end
+
+-- La cámara del vídeo de la sala: entre los puntos del recorrido, suave.
+function VideoRobot:camaraSala(escena)
+    if not self.salaPreparada then
+        self.salaPreparada = true
+        prepararSala(escena)
+    end
+    local t = self.cuadros / VideoRobot.fps
+    local r = VideoRobot.recorridoSala
+    local a, b = r[1], r[#r]
+    for k = 1, #r - 1 do
+        if t >= r[k][1] and t <= r[k + 1][1] then
+            a, b = r[k], r[k + 1]
+        end
+    end
+    local f = b[1] > a[1] and math.max(0, math.min(1, (t - a[1]) / (b[1] - a[1]))) or 1
+    f = f * f * (3 - 2 * f)
+    local p = {}
+    for k = 2, 7 do
+        p[k] = a[k] + (b[k] - a[k]) * f
+    end
+    escena.x, escena.y, escena.z = p[2], p[4], -p[3]
+    local dx, dy = p[5] - p[2], p[6] - p[3]
+    escena.controlador:orientar(math.atan2(dy, -dx), math.atan2(p[4] - p[7], math.sqrt(dx * dx + dy * dy)))
+    escena.controlador:detener()
+    -- Los monitores que salen, al día en cada cuadro (sin vídeo, cada 0,5 s).
+    escena.sala:pintarOrdenador(2)
+    escena.sala:pintarOrdenador(5)
+end
+
 function VideoRobot:camara(escena)
+    if VideoRobot.sala then
+        return self:camaraSala(escena)
+    end
     local robot = escena.robotSeguido or escena.robot
     local x, y = robot:getPosicion()
     local rumbo = robot:getRumbo()
@@ -245,7 +307,9 @@ function VideoRobot:cuadro(escena)
             love.event.quit()
         end
     end
-    if VideoRobot.soldado then
+    if VideoRobot.sala then
+        self.fin = self.fin or VideoRobot.sala * VideoRobot.fps
+    elseif VideoRobot.soldado then
         self.fin = self.fin or VideoRobot.soldado * VideoRobot.fps
     elseif not self.fin and robot:getHechos() >= #require('almacen.escena').encargos and not robot:getOcupado() then
         self.fin = self.cuadros + VideoRobot.fps * 2

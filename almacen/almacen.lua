@@ -181,6 +181,12 @@ function Almacen:getRecursos()
     return r
 end
 
+--- La semilla de la partida (para saber si lo guardado es de esta partida).
+function Almacen:getSemilla()
+    local sim = simulacion()
+    return sim and sim.estado.semilla
+end
+
 function Almacen:getPartida()
     return require('almacen.partida').leer(simulacion(), self.nacion)
 end

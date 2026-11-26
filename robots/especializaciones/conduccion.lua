@@ -84,6 +84,14 @@ function Conduccion:onUpdate(dt)
         if distancia <= C.llegada or (distancia < C.cerca and math.abs(error) > C.giroEnSitio) then
             distancia = 0
         end
+        -- Le faltan unos centímetros y el parachoques no le deja avanzar (la
+        -- mesa o el rack delante): ya ha llegado. Antes se quedaba para
+        -- siempre a 10 cm del punto sin darlo por bueno (el dueño, 26-nov:
+        -- «ese pendejo lleva más de 10 minutos ahí»).
+        if distancia > 0 and distancia < C.cerca and not atras and self.datos.lidar
+            and self:getDistanciaDelante(C.anchoParachoques, C.capaParachoques) - C.parachoques <= 0.02 then
+            distancia = 0
+        end
         if distancia > 0 then
             w = math.max(-C.giroMaximo, math.min(C.giroMaximo, error * 1.2))
             -- Siguiendo una ruta (setIrA con `enMarcha`) gira andando; para
@@ -113,9 +121,16 @@ function Conduccion:onUpdate(dt)
                 end
             end
         elseif d.destino[3] then
+            -- Se encara frenando el giro a tiempo (ω² = 2·α·ángulo, como al
+            -- avanzar): con ω = error·1,2 y la aceleración de giro limitada se
+            -- pasaba, volvía y no entraba nunca en el margen; se quedaba
+            -- meneándose en su sitio sin acabar (el dueño, 26-nov).
             local error = angulo(d.destino[3] - self.rumbo)
-            if math.abs(error) > 0.02 then
-                w = math.max(-C.giroMaximo, math.min(C.giroMaximo, error * 1.2))
+            local quieto = math.abs(self.giro) < 0.05
+            if math.abs(error) > 0.02 and not (math.abs(error) < 0.05 and quieto) then
+                local frenar = math.sqrt(2 * C.aceleracionGiro * math.abs(error)) * 0.8
+                local signo = error > 0 and 1 or -1
+                w = signo * math.min(C.giroMaximo, frenar, math.abs(error) * 3)
             else
                 d.destino = nil
             end
@@ -152,6 +167,7 @@ function Conduccion:onUpdate(dt)
     if d.prisa and d.maximaConPrisa then
         d.maximaConPrisa = math.max(d.maximaConPrisa, math.abs(self.velocidad))
     end
+    d.ultimoV, d.ultimoW = v, w -- (para depurar atascos)
     local pasoGiro = C.aceleracionGiro * dt
     self.giro = self.giro + math.max(-pasoGiro, math.min(pasoGiro, w - self.giro))
     self.rumbo = angulo(self.rumbo + self.giro * dt)

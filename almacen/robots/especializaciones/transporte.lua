@@ -182,7 +182,8 @@ end
 
 -- Ir hasta delante de algo y atracar (las manos ya puestas a su altura).
 -- `antes`: lo que hace en el punto previo antes de acercarse (subir lo que
--- lleva por encima de la balda...).
+-- lleva por encima de la balda...). Devuelve false si no pudo llegar al
+-- punto previo (la navegación se rindió) y no atraca.
 local function irYAtracar(self, x, y, rumbo, lateral, texto, antes)
     local ax, ay, px, py = atraque(x, y, rumbo, lateral)
     tarea(self, texto)
@@ -190,6 +191,9 @@ local function irYAtracar(self, x, y, rumbo, lateral, texto, antes)
     esperar(function()
         return not self:getNavegando()
     end)
+    if self:getSinCamino() then
+        return false
+    end
     if antes then
         antes()
     end
@@ -200,6 +204,7 @@ local function irYAtracar(self, x, y, rumbo, lateral, texto, antes)
         return self:getHaLlegado()
     end, 15)
     self:setVelocidadMaxima(nil)
+    return true
 end
 
 -- Mueve las manos a sus objetivos y espera a que lleguen (con calma:
@@ -238,7 +243,13 @@ function Transporte.llevar(self, objeto, mueble, numero)
     -- Anda con los brazos abajo y quietos; no se mueve hasta tenerlos ahí.
     brazosAbajo(self)
     self:setFoco(ox, oy, oz + 0.1, objeto.apoyadoEn or objeto)
-    irYAtracar(self, ox, oy, rumbo, lateral, 'voy a por la ' .. nombre)
+    if not irYAtracar(self, ox, oy, rumbo, lateral, 'voy a por la ' .. nombre) then
+        tarea(self, 'no llego a la ' .. nombre .. ': la dejo para luego')
+        d.noLlego = objeto
+        pausa(1)
+        self:setFoco(nil)
+        return
+    end
     -- Antes de tocarlo, lo mira: hasta que sus ojos lo reconocen.
     leer(self, objeto)
     local puede, motivo = self:getPuedeCoger(objeto)

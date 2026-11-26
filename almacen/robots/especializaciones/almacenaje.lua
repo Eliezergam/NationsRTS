@@ -28,6 +28,8 @@
 
 ---@class Almacenaje : Robot
 local Almacenaje = {}
+-- Lo que espera para volver a por una caja a la que no pudo llegar (s).
+Almacenaje.esperaNoLlego = 120
 local Robot = GestorRobots.Robot
 
 -- Qué cartel busca para cada recurso (assets/almacen/objetos_datos.lua).
@@ -259,7 +261,10 @@ cajasConocidas = function(self)
         end
         vistos[o] = true
         local recurso = o.datos.recurso
-        if recurso and Almacenaje.cartel[recurso] and not o:getLlevadoPor() and enPatio(o) and not self.datos.almacenaje.sinSitio[o] then
+        local da = self.datos.almacenaje
+        local fallo = da.noLlego and da.noLlego[o]
+        local aparte = fallo and da.reloj - fallo < Almacenaje.esperaNoLlego
+        if recurso and Almacenaje.cartel[recurso] and not o:getLlevadoPor() and enPatio(o) and not da.sinSitio[o] and not aparte then
             local ox, oy = o:getPosicion()
             lista[#lista + 1] = { o = o, d = (ox - x) ^ 2 + (oy - y) ^ 2 }
         end
@@ -543,6 +548,15 @@ local function vuelta(self)
     end)
     if caja:getApoyadoEn() == rack then
         d.guardados = d.guardados + 1
+    end
+    -- No llegó hasta ella (algo tapa el sitio desde donde se coge): la deja
+    -- un rato y sigue con otra, en vez de volver a la misma sin parar.
+    local t = self.datos.transporte
+    if t.noLlego == caja then
+        t.noLlego = nil
+        d.noLlego = d.noLlego or setmetatable({}, { __mode = 'k' })
+        d.noLlego[caja] = d.reloj
+        print(string.format('ROBOT dejo la %s para dentro de %d s', caja:getNombre(), Almacenaje.esperaNoLlego))
     end
 end
 
