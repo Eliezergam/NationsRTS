@@ -195,7 +195,7 @@ local function evaluar(estado, ctx)
     if r then
         Depuracion.evaluar(codigo, { self = r, Lugares = require('almacen.robots.especializaciones.guion').lugares() }, { robot = estado.filtro, archivo = 'depurador' })
     else
-        Depuracion.evaluar(codigo, { robots = ApiRobots.para(ctx.ordenador) }, { puesto = ctx.ordenador.nombre, archivo = 'depurador' })
+        Depuracion.evaluar(codigo, { robots = ApiRobots.para(ctx.ordenador), muro = require('almacen.pc.muro').para() }, { puesto = ctx.ordenador.nombre, archivo = 'depurador' })
     end
 end
 

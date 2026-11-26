@@ -9,6 +9,7 @@ local Archivos = require('almacen.pc.archivos')
 local Lua = require('almacen.pc.lua')
 local ApiRobots = require('almacen.pc.api_robots')
 local Depuracion = require('almacen.pc.depuracion')
+local Muro = require('almacen.pc.muro')
 
 local Terminal = {}
 
@@ -81,6 +82,8 @@ Programas (Lua; Ctrl+T los corta):
   robot <nombre> parar
   En los programas: robots.lista(), robots.estado(n), robots.trabajar(n),
   robots.parar(n), robots.ejecutar(n, archivo), robots.posicion(n),
+  muro.mostrar(parte, fuente) (parte: grande, arriba, abajo o todo;
+  fuentes: muro.fuentes()), muro.porPartes(),
   print, sleep. Cada guion de robot es un ejecutable: una especialización
   (onLoad, onUpdate, self = el robot); uno a la vez. Lee ~/guiones/LEEME.txt]]
 
@@ -241,7 +244,7 @@ local function correr(estado, ctx, ruta)
         return
     end
     local codigo = table.concat(fs:leer(ruta) or {}, '\n')
-    local api = { robots = ApiRobots.para(ctx.ordenador, estado.carpeta) }
+    local api = { robots = ApiRobots.para(ctx.ordenador, estado.carpeta), muro = Muro.para() }
     local origen = { puesto = ctx.ordenador.nombre, archivo = ruta:match('[^/]+$') }
     local programa, error = Lua.cargar(codigo, origen.archivo, api, function(texto, linea)
         escribir(estado, texto)

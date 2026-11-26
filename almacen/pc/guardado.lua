@@ -42,9 +42,10 @@ local function serializar(v, sangria)
     end
 end
 
---- Guarda `ordenadores` (la lista de `datos` de cada puesto).
-function Guardado.guardar(almacen, semilla, ordenadores)
-    local datos = { semilla = semilla, nacion = almacen:getNacion(), ordenadores = ordenadores }
+--- Guarda `ordenadores` (la lista de `datos` de cada puesto) y `muro` (lo
+-- que enseña el muro de pantallas: almacen/pc/muro.lua).
+function Guardado.guardar(almacen, semilla, ordenadores, muro)
+    local datos = { semilla = semilla, nacion = almacen:getNacion(), ordenadores = ordenadores, muro = muro }
     local bien, texto = pcall(serializar, datos)
     if bien then
         love.filesystem.write(Guardado.archivo, 'return ' .. texto .. '\n')
@@ -53,7 +54,7 @@ function Guardado.guardar(almacen, semilla, ordenadores)
     end
 end
 
---- Lo guardado de esta partida y nación, o nil.
+--- Lo guardado de esta partida y nación (ordenadores, muro), o nil.
 function Guardado.leer(almacen, semilla)
     if not love.filesystem.getInfo(Guardado.archivo) then
         return nil
@@ -62,7 +63,7 @@ function Guardado.leer(almacen, semilla)
         return love.filesystem.load(Guardado.archivo)()
     end)
     if bien and type(datos) == 'table' and datos.semilla == semilla and datos.nacion == almacen:getNacion() then
-        return datos.ordenadores
+        return datos.ordenadores, datos.muro
     end
     return nil
 end

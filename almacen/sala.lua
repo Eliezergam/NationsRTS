@@ -2,12 +2,15 @@
 -- pantallas. El modelo sale de tools/blender/almacen_interior.py
 -- (crearSalaControl) con cinco mallas que se pintan aquí:
 --
---   * `pantallaMapa`: las 4 pantallas de la izquierda del muro, una sola
---     imagen: el mapa 2D de la capital (assets/almacen/mapa_capital.png,
---     una captura fija del mapa del juego).
---   * `pantallaNacion`: la nación de la partida (nombre, capital, poder,
---     nivel, día y los cuatro recursos).
---   * `pantallaArsenal`: los misiles del almacén.
+--   * el muro de pantallas del frente, en tres partes: `pantallaMapa` (las
+--     4 de la izquierda, una sola imagen), `pantallaNacion` (arriba a la
+--     derecha) y `pantallaArsenal` (abajo a la derecha). Qué enseña cada una
+--     se elige desde los ordenadores (programa «Muro», almacen/pc/muro.lua):
+--     el mapa 2D de la capital (assets/almacen/mapa_capital.png, una
+--     captura fija del mapa del juego), la nación (nombre, capital, poder,
+--     nivel, día y los cuatro recursos), los misiles del almacén, los
+--     robots, la depuración o la pantalla de un puesto; o una sola cosa en
+--     el muro entero. Al empezar: mapa, nación y misiles.
 --   * `pantallaPC1`..`pantallaPC6`: el monitor de cada puesto, un ordenador
 --     propio con su escritorio y sus programas (almacen/pc/ordenador.lua). Lo
 --     que tiene abierto cada uno lo guarda el almacén entre visitas.
@@ -21,6 +24,9 @@ local dream = require('lib.3DreamEngine')
 local Dibujo = require('almacen.pc.dibujo')
 local Guardado = require('almacen.pc.guardado')
 local Ordenador = require('almacen.pc.ordenador')
+local Muro = require('almacen.pc.muro')
+local Depuracion = require('almacen.pc.depuracion')
+local ApiRobots = require('almacen.pc.api_robots')
 
 local SalaControl = {}
 SalaControl.__index = SalaControl
@@ -31,6 +37,7 @@ local LETRA_DATO = 'assets/fuentes/JetBrainsMono-SemiBold.ttf'
 
 -- Cada cuánto se vuelven a pintar las pantallas de datos (s) y las luces.
 SalaControl.refresco = 0.5
+SalaControl.refrescoMuroVivo = 0.1 -- con la pantalla de un puesto o la depuración
 SalaControl.refrescoLeds = 0.08
 -- Brillo de las pantallas (factor de emisión del motor).
 SalaControl.brilloMuro = 1.6
@@ -75,19 +82,33 @@ function SalaControl.nueva(objeto, almacen)
     self.almacen = almacen
     self.objetos = objeto.objects
     local g = love.graphics
+    -- Las letras a doble densidad: en la parte grande del muro todo sale al
+    -- doble y se tiene que leer igual de nítido.
     self.letras = {
-        enorme = g.newFont(LETRA_TITULO, 110),
-        grande = g.newFont(LETRA_TITULO, 64),
-        titulo = g.newFont(LETRA_TITULO, 40),
-        medio = g.newFont(LETRA_TITULO, 30),
-        dato = g.newFont(LETRA_DATO, 20),
-        chico = g.newFont(LETRA_DATO, 15),
+        enorme = g.newFont(LETRA_TITULO, 110, 'normal', 2),
+        grande = g.newFont(LETRA_TITULO, 64, 'normal', 2),
+        titulo = g.newFont(LETRA_TITULO, 40, 'normal', 2),
+        medio = g.newFont(LETRA_TITULO, 30, 'normal', 2),
+        dato = g.newFont(LETRA_DATO, 20, 'normal', 2),
+        chico = g.newFont(LETRA_DATO, 15, 'normal', 2),
     }
-    self.nacion = g.newCanvas(768, 436)
-    self.arsenal = g.newCanvas(768, 436)
+    -- Las tres partes del muro (almacen/pc/muro.lua).
+    self.muro = {
+        grande = g.newCanvas(Muro.partes.grande[3], Muro.partes.grande[4], { mipmaps = 'auto' }),
+        arriba = g.newCanvas(Muro.partes.arriba[3], Muro.partes.arriba[4], { mipmaps = 'auto' }),
+        abajo = g.newCanvas(Muro.partes.abajo[3], Muro.partes.abajo[4], { mipmaps = 'auto' }),
+    }
     -- Los ordenadores de los puestos (lo que se dejó abierto, del almacén).
-    -- Si el juego se cerró, lo que quedó guardado (almacen/pc/guardado.lua).
-    almacen.ordenadores = almacen.ordenadores or Guardado.leer(almacen, almacen:getSemilla()) or {}
+    -- Si el juego se cerró, lo que quedó guardado (almacen/pc/guardado.lua),
+    -- con lo que enseñaba el muro.
+    if not almacen.ordenadores then
+        local ordenadores, muro = Guardado.leer(almacen, almacen:getSemilla())
+        almacen.ordenadores = ordenadores or {}
+        almacen.muro = almacen.muro or muro
+    end
+    almacen.muro = almacen.muro or Muro.porDefecto()
+    Muro.estado = almacen.muro
+    Muro.sala = self
     self.almacen = almacen
     self.ordenadores = {}
     for k = 1, 6 do
@@ -107,9 +128,9 @@ function SalaControl.nueva(objeto, almacen)
     self.leds:setFilter('nearest', 'nearest')
     self.mapa = g.newImage(MAPA, { mipmaps = true })
     self.mapa:setFilter('linear', 'linear')
-    ponerPantalla(self.objetos.pantallaMapa, 'pantallaMapaViva', self.mapa, SalaControl.brilloMuro)
-    ponerPantalla(self.objetos.pantallaNacion, 'pantallaNacionViva', self.nacion, SalaControl.brilloMuro)
-    ponerPantalla(self.objetos.pantallaArsenal, 'pantallaArsenalViva', self.arsenal, SalaControl.brilloMuro)
+    ponerPantalla(self.objetos.pantallaMapa, 'pantallaMapaViva', self.muro.grande, SalaControl.brilloMuro)
+    ponerPantalla(self.objetos.pantallaNacion, 'pantallaNacionViva', self.muro.arriba, SalaControl.brilloMuro)
+    ponerPantalla(self.objetos.pantallaArsenal, 'pantallaArsenalViva', self.muro.abajo, SalaControl.brilloMuro)
     ponerPantalla(self.objetos.ledsServidores, 'ledsServidoresVivos', self.leds, SalaControl.brilloLeds)
     -- Vidrio de los tabiques: transparente (pasada de alfa del motor), apenas
     -- teñido y sin desviar lo de detrás. Una luna plana y fina no deforma lo
@@ -136,6 +157,7 @@ function SalaControl.nueva(objeto, almacen)
     self.reloj = 0
     self.proximo = 0
     self.proximoLeds = 0
+    self.proximoMuro = 0
     self:pintar()
     self:pintarLeds()
     return self
@@ -149,6 +171,13 @@ function SalaControl:actualizar(dt)
     if self.reloj >= self.proximo then
         self.proximo = self.reloj + SalaControl.refresco
         self:pintar()
+    end
+    -- El muro: enseguida si se ha cambiado lo que enseña; a menudo si enseña
+    -- algo vivo (la pantalla de un puesto); si no, con los datos.
+    if Muro.cambiado or self.reloj >= self.proximoMuro then
+        Muro.cambiado = false
+        self.proximoMuro = self.reloj + (Muro.esVivo() and SalaControl.refrescoMuroVivo or SalaControl.refresco)
+        self:pintarMuro()
     end
     if self.reloj >= self.proximoLeds then
         self.proximoLeds = self.reloj + SalaControl.refrescoLeds
@@ -168,8 +197,12 @@ function SalaControl:dibujar()
 end
 
 function SalaControl:cerrar()
-    for _, lienzo in ipairs({ self.nacion, self.arsenal }) do
+    for _, lienzo in pairs(self.muro) do
         lienzo:release()
+    end
+    if Muro.sala == self then
+        Muro.sala = nil
+        Muro.estado = nil
     end
     for _, pc in ipairs(self.ordenadores) do
         pc:cerrar()
@@ -182,14 +215,6 @@ function SalaControl:pintar()
     local partida = self.almacen:getPartida()
     local misiles, capacidad = self.almacen:getMisiles(), self.almacen:getCapacidad()
     self.partida = partida
-    local g = love.graphics
-    g.push('all')
-    g.origin()
-    g.setCanvas(self.nacion)
-    self:pintarNacion(partida, 768, 436)
-    g.setCanvas(self.arsenal)
-    self:pintarArsenal(misiles, capacidad, 768, 436)
-    g.pop()
     self.datosPC = { partida = partida, misiles = misiles, capacidad = capacidad }
     for k in ipairs(self.ordenadores) do
         self:pintarOrdenador(k)
@@ -198,7 +223,7 @@ end
 
 --- Guarda en disco lo de los ordenadores (ventanas y carpetas personales).
 function SalaControl:guardarOrdenadores()
-    Guardado.guardar(self.almacen, self.almacen:getSemilla(), self.almacen.ordenadores)
+    Guardado.guardar(self.almacen, self.almacen:getSemilla(), self.almacen.ordenadores, self.almacen.muro)
 end
 
 --- Vuelve a pintar el ordenador `k` con los datos de la última lectura (el
@@ -211,6 +236,155 @@ end
 
 local fondo = Dibujo.fondo
 local trebol = Dibujo.trebol
+
+-- string.upper no sabe de tildes (UTF-8).
+local TILDES = { ['á'] = 'Á', ['é'] = 'É', ['í'] = 'Í', ['ó'] = 'Ó', ['ú'] = 'Ú', ['ñ'] = 'Ñ', ['ü'] = 'Ü' }
+local function mayusculas(texto)
+    return (texto:upper():gsub('\195[\128-\191]', TILDES))
+end
+
+--- Pinta las tres partes del muro con lo que enseña cada una (o la misma
+-- fuente repartida por todo el muro).
+function SalaControl:pintarMuro()
+    local e = Muro.estado or Muro.porDefecto()
+    local g = love.graphics
+    g.push('all')
+    for _, z in ipairs(Muro.zonas) do
+        local parte = Muro.partes[z.clave]
+        g.setCanvas(self.muro[z.clave])
+        g.origin()
+        g.clear(0, 0, 0, 1)
+        if e.entero then
+            -- Su trozo del muro entero.
+            g.translate(-parte[1], -parte[2])
+            self:pintarFuente(e.todo, Muro.ancho, Muro.alto)
+        else
+            self:pintarFuente(e[z.clave], parte[3], parte[4])
+        end
+    end
+    g.pop()
+end
+
+-- Las pantallas de datos están pensadas a 768 x 436: a otro tamaño se
+-- escalan por el alto (y se estiran a lo ancho).
+local function aEscala(w, h, f)
+    local g = love.graphics
+    local s = h / 436
+    g.push()
+    g.scale(s)
+    f(w / s, 436)
+    g.pop()
+end
+
+--- Pinta la fuente `clave` (almacen/pc/muro.lua) en (0, 0, w, h).
+function SalaControl:pintarFuente(clave, w, h)
+    local g = love.graphics
+    g.setColor(1, 1, 1, 1)
+    if clave == 'mapa' then
+        -- Que llene la parte entera (recorta lo que sobre).
+        local iw, ih = self.mapa:getDimensions()
+        local s = math.max(w / iw, h / ih)
+        g.draw(self.mapa, (w - iw * s) / 2, (h - ih * s) / 2, 0, s, s)
+    elseif clave == 'nacion' then
+        aEscala(w, h, function(ew, eh)
+            self:pintarNacion(self.partida, ew, eh)
+        end)
+    elseif clave == 'arsenal' then
+        aEscala(w, h, function(ew, eh)
+            self:pintarArsenal(self.almacen:getMisiles(), self.almacen:getCapacidad(), ew, eh)
+        end)
+    elseif clave == 'robots' then
+        aEscala(w, h, function(ew, eh)
+            self:pintarRobots(ew, eh)
+        end)
+    elseif clave == 'depuracion' then
+        aEscala(w, h, function(ew, eh)
+            self:pintarDepuracion(ew, eh)
+        end)
+    elseif clave and clave:match('^pc%d$') then
+        -- La pantalla del puesto tal cual, entera (con bandas si no cabe).
+        local pc = self.ordenadores[tonumber(clave:sub(3))]
+        fondo(w, h, 0, 0, 0)
+        if pc then
+            local lienzo = pc:getLienzo()
+            local lw, lh = Ordenador.ancho, Ordenador.alto
+            local s = math.min(w / lw, h / lh)
+            g.setColor(1, 1, 1, 1)
+            g.draw(lienzo, (w - lw * s) / 2, (h - lh * s) / 2, 0, s, s)
+        end
+    else
+        fondo(w, h, 0.035, 0.05, 0.055)
+    end
+end
+
+--- Los robots del almacén: qué ejecuta cada uno, qué está haciendo y dónde.
+function SalaControl:pintarRobots(w, h)
+    local g = love.graphics
+    local L = self.letras
+    fondo(w, h, 0.035, 0.05, 0.055)
+    g.setColor(0.31, 0.76, 1)
+    g.setFont(L.titulo)
+    g.print('ROBOTS DEL ALMACÉN', 28, 16)
+    local lista = ApiRobots.robots()
+    if #lista == 0 then
+        g.setColor(0.62, 0.7, 0.74)
+        g.setFont(L.dato)
+        g.print('No hay robots en el almacén.', 28, 90)
+        return
+    end
+    -- Filas de 150: con dos robots la segunda empieza bajo la junta de las
+    -- pantallas grandes (a media altura), no partida por ella.
+    local alto = math.min(150, (h - 80) / #lista)
+    for k, e in ipairs(lista) do
+        local r = e.robot
+        local y = 76 + (k - 1) * alto
+        local parado = r:getModo() == 'parado'
+        local color = parado and { 0.95, 0.72, 0.25 } or VERDE
+        g.setColor(color)
+        g.rectangle('fill', 28, y + 4, 12, alto - 22)
+        g.setColor(1, 1, 1)
+        g.setFont(L.medio)
+        g.print(mayusculas(e.titulo), 54, y)
+        g.setColor(color)
+        g.setFont(L.dato)
+        g.printf(parado and 'PARADO' or ('EJECUTA ' .. tostring(r:getGuion())), 54, y + 4, w - 82, 'right')
+        g.setColor(0.62, 0.7, 0.74)
+        g.setFont(L.chico)
+        local tarea = r.getTarea and r:getTarea() or nil
+        g.print(string.format('x %.1f  y %.1f', r.x or 0, r.y or 0) .. ((tarea and tarea ~= '') and ('   ·   ' .. tostring(tarea)) or ''), 54, y + 42)
+    end
+end
+
+--- Lo último que han escrito los robots y los programas con print().
+function SalaControl:pintarDepuracion(w, h)
+    local g = love.graphics
+    local L = self.letras
+    fondo(w, h, 0.03, 0.035, 0.04)
+    g.setColor(0.95, 0.5, 0.42)
+    g.setFont(L.titulo)
+    g.print('DEPURACIÓN', 28, 12)
+    local letra = L.dato
+    g.setFont(letra)
+    local alto = letra:getHeight() + 4
+    local caben = math.floor((h - 70) / alto)
+    local lineas = Depuracion.lineas
+    local y = 64
+    for k = math.max(1, #lineas - caben + 1), #lineas do
+        local l = lineas[k]
+        local quien = (l.robot or l.puesto or '') .. (l.archivo and (' · ' .. l.archivo .. (l.linea and (':' .. l.linea) or '')) or '')
+        g.setColor(0.45, 0.5, 0.52)
+        local cabeza = l.hora:sub(4) .. ' [' .. quien .. '] '
+        g.print(cabeza, 28, y)
+        local color = l.tipo == 'error' and { 1, 0.42, 0.36 } or (l.tipo == 'orden' and { 0.45, 0.8, 0.95 } or (l.tipo == 'resultado' and { 0.5, 0.88, 0.55 } or { 0.88, 0.9, 0.9 }))
+        g.setColor(color)
+        g.print(l.texto, 28 + letra:getWidth(cabeza), y)
+        y = y + alto
+    end
+    if #lineas == 0 then
+        g.setColor(0.45, 0.5, 0.52)
+        g.print('Aquí sale lo que escriben con print() los robots y los programas.', 28, y)
+    end
+end
 
 function SalaControl:pintarNacion(p, w, h)
     local g = love.graphics

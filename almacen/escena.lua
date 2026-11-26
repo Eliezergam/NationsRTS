@@ -880,23 +880,50 @@ function EscenaAlmacen:pruebaPC(dt)
         love.graphics.captureScreenshot('pc_' .. n .. '.png')
         print('PRUEBA PC foto pc_' .. n .. '.png')
     end
-    -- Iconos del escritorio: k-ésimo en (74, 24 + (k - 1) * 104 + 40);
-    -- 4 = Terminal, 6 = Robots. Un paso con función en vez de segundo
-    -- espera a que se cumpla (y los segundos siguientes cuentan desde ahí).
-    local function llevando()
-        return self.robot:getLlevando() ~= nil
+    -- Iconos del escritorio en columnas de 6: el k-ésimo en
+    -- (74 + columna * 124, 24 + fila * 104 + 40); 8 = Muro (2.ª columna).
+    -- Un paso con función en vez de segundo espera a que se cumpla (y los
+    -- segundos siguientes cuentan desde ahí).
+    local Muro = require('almacen.pc.muro')
+    -- Un punto del área de la ventana del Muro, en px del escritorio.
+    local function enMuro(x, y)
+        for _, pc in ipairs(self.sala.ordenadores) do
+            for _, v in ipairs(pc.datos.ventanas) do
+                if v.programa == 'muro' then
+                    return v.x + x, v.y + Ordenador.altoTitulo + y
+                end
+            end
+        end
+        return 0, 0
     end
-    -- Robots se abre en cascada en (184, 58), su área desde y = 92; en su
-    -- lista, trabajar.lua es la segunda fila (y = 170 + 30).
+    local function clicMuro(x, y)
+        local a, b = enMuro(x, y)
+        clic(a, b)
+    end
+    -- Filas de fuentes: x desde 612, y = 72 + (k - 1) * 36 (+16 al centro).
+    local function fuente(k)
+        clicMuro(700, 72 + (k - 1) * 36 + 16)
+    end
     local guion = {
         { 4, function() tecla('e') end },
-        { 5.5, function() clic(74, 24 + 5 * 104 + 40, 2) end }, -- Robots
-        { 7, function() clic(184 + 384, 92 + 215, 2) end }, -- trabajar.lua en el del almacén
-        { 15, foto },
-        { 16, function() clic(74, 24 + 3 * 104 + 40, 2) end }, -- Terminal
-        { 17, function() escribir('robot soldado ejecutar ~/guiones/patrulla.lua') end },
-        { 27, foto },
-        { 27.5, function() love.event.quit() end },
+        { 5.5, function() clic(74 + 124, 24 + 104 + 40, 2) end }, -- Muro
+        { 7, function() fuente(4) end }, -- las 4 grandes: robots
+        { 7.5, function() clicMuro(24 + 470, 96 + 40) end }, -- arriba a la derecha
+        { 8, function() fuente(5) end }, -- depuración
+        { 8.5, function() clicMuro(24 + 470, 96 + 160) end }, -- abajo a la derecha
+        { 9, function() fuente(9) end }, -- pantalla del puesto 4
+        { 10, foto },
+        { 10.5, function() print('PRUEBA MURO ' .. Muro.que('grande') .. ' ' .. Muro.que('arriba') .. ' ' .. Muro.que('abajo')) end },
+        { 11, function() tecla('escape') end },
+        { 13, foto },
+        { 14, function() tecla('e') end },
+        { 15, function() clicMuro(24 + 172 + 80, 40 + 19) end }, -- Todo el muro
+        { 15.5, function() fuente(1) end }, -- el mapa en todo el muro
+        { 16, foto },
+        { 16.5, function() print('PRUEBA MURO todo=' .. tostring(Muro.estado.entero) .. ' ' .. Muro.estado.todo) end },
+        { 17, function() tecla('escape') end },
+        { 19, foto },
+        { 19.5, function() love.event.quit() end },
     }
     local paso = guion[self.pasoPrueba]
     if not paso then
