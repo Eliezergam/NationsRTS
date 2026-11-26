@@ -14,32 +14,16 @@
 -- menos (lo gastó mientras tanto), se quitan cajas de los racks hasta que
 -- cuadre (más adelante: los robots las sacarán al muelle).
 --
--- Se guarda en la memoria de la partida (el objeto Almacen de la nación) y
--- en `almacen_disposicion.lua` de la carpeta del juego, con la semilla y la
--- nación: al cargar la misma partida sigue igual. No es parte de la
--- simulación (no cambia nada del juego en línea).
+-- Se guarda en la memoria del almacén de la nación (almacen/memoria.lua),
+-- que va dentro de la partida (partida/guardado.lua). No es parte de la
+-- simulación (no cambia nada del juego en línea). El archivo de antes,
+-- `almacen_disposicion.lua`, solo se lee una vez para traer lo que tenía.
+
+local Memoria = require('almacen.memoria')
 
 local Disposicion = {}
 
 Disposicion.archivo = 'almacen_disposicion.lua'
-
-local function serializar(v, sangria)
-    sangria = sangria or ''
-    if type(v) == 'table' then
-        local partes = { '{\n' }
-        local otra = sangria .. '    '
-        for k, x in pairs(v) do
-            local clave = type(k) == 'number' and ('[' .. k .. ']') or ('[' .. string.format('%q', k) .. ']')
-            partes[#partes + 1] = otra .. clave .. ' = ' .. serializar(x, otra) .. ',\n'
-        end
-        partes[#partes + 1] = sangria .. '}'
-        return table.concat(partes)
-    elseif type(v) == 'string' then
-        return string.format('%q', v)
-    else
-        return tostring(v)
-    end
-end
 
 --- Dónde está el mueble `mueble` en la escena: { 'rack', fila, indice } o
 -- { 'mesa', indice }, o nil si no es un rack ni una mesa del patio.
@@ -94,29 +78,28 @@ function Disposicion.tomar(escena, objetos, tipos)
     return cajas
 end
 
---- Guarda la foto `cajas` para la partida y nación de `almacen`.
+--- Guarda la foto `cajas` para la nación de `almacen`.
 function Disposicion.guardar(almacen, semilla, cajas)
-    almacen.disposicion = cajas
-    local datos = { semilla = semilla, nacion = almacen:getNacion(), cajas = cajas }
-    love.filesystem.write(Disposicion.archivo, 'return ' .. serializar(datos) .. '\n')
+    Memoria.de(almacen:getNacion()).cajas = cajas
 end
 
---- La última foto de `almacen` (la de la memoria; si no hay, la del
--- archivo si es de la misma partida y nación), o una lista vacía.
+--- La última foto de `almacen`: la de la partida; si no hay, la del archivo
+-- de antes si es de la misma partida y nación (una vez); si no, vacía.
 function Disposicion.leer(almacen, semilla)
-    if almacen.disposicion then
-        return almacen.disposicion
+    local memoria = Memoria.de(almacen:getNacion())
+    if memoria.cajas then
+        return memoria.cajas
     end
-    if not love.filesystem.getInfo(Disposicion.archivo) then
-        return {}
+    memoria.cajas = {}
+    if love.filesystem.getInfo(Disposicion.archivo) then
+        local bien, datos = pcall(function()
+            return love.filesystem.load(Disposicion.archivo)()
+        end)
+        if bien and type(datos) == 'table' and datos.semilla == semilla and datos.nacion == almacen:getNacion() then
+            memoria.cajas = datos.cajas or {}
+        end
     end
-    local bien, datos = pcall(function()
-        return love.filesystem.load(Disposicion.archivo)()
-    end)
-    if bien and type(datos) == 'table' and datos.semilla == semilla and datos.nacion == almacen:getNacion() then
-        return datos.cajas or {}
-    end
-    return {}
+    return memoria.cajas
 end
 
 --- Pone en su hueco las cajas de la foto. `crear(tipo, hueco)` crea el

@@ -86,11 +86,12 @@ que no se para nunca:
 | Dato | Dueño | Cómo lo cambian los demás | Dónde se guarda |
 |---|---|---|---|
 | Terreno, ciudades, yacimientos | La semilla (`mundo/`) | Nadie: se genera igual en cada máquina | No se guarda |
-| Naciones, guerras, grupos, territorio, dinero, recursos del almacén, misiles | La simulación | Órdenes `ejecutar({ tipo = … })`: hay 31 desde fuera (interfaz, batalla, almacén, main) | `partida.lua` (`Simulacion:guardar`) |
+| Naciones, guerras, grupos, territorio, dinero, recursos del almacén, misiles | La simulación | Órdenes `ejecutar({ tipo = … })`: hay 31 desde fuera (interfaz, batalla, almacén, main) | `partida.lua`, parte `sim` |
 | Resultado de una batalla | La batalla 3D mientras dura | Al salir, la orden `resolverBatalla` devuelve bajas y heridos a la simulación | En la simulación |
 | Almacén de cada nación para los guiones | La simulación | `Almacen` (global, `almacen/almacen.lua`): `get…` lee y `set…` manda órdenes | En la simulación |
-| Cajas, robots y racks del almacén 3D | La escena del almacén | Directo, sin órdenes | `almacen_disposicion.lua`, aparte |
-| Ordenadores de la sala (ventanas, carpeta personal, muro) | `almacen/pc/` | Directo, sin órdenes | `almacen_ordenadores.lua`, aparte |
+| Dónde está cada caja del almacén 3D | La escena del almacén | Directo, sin órdenes (`almacen/memoria.lua`) | `partida.lua`, sección `almacen` |
+| Ordenadores de la sala (ventanas, carpeta personal, muro) | `almacen/pc/` | Directo, sin órdenes (`almacen/memoria.lua`) | `partida.lua`, sección `almacen` |
+| Quién es el jugador (su nación y capitales) | `main.lua` | Al empezar (`escenarioPrueba`) | `partida.lua`, sección `jugador` |
 | Lo que aprenden los robots | `robots/conocimiento.lua` | Directo | Archivos JSON propios |
 | Ajustes del jugador | `interfaz/ajustes.lua` | Directo | Su archivo |
 
@@ -102,6 +103,20 @@ dentro del estado guardado) y `Ayudas.cambiarRelacion` en la tecla G de
 `main.lua` (provocar una guerra de prueba). Las
 lecturas directas de `sim.estado` sí están repartidas: unas 59 en la
 interfaz, 59 en `main.lua`, 8 en la batalla y 6 en el almacén.
+
+### El guardado
+
+Una partida es un solo archivo, `partida.lua` (`partida/guardado.lua`): el
+mundo vivo de la simulación (`sim`) y una sección por cada sistema que tiene
+algo propio que guardar (`secciones`), registrada con
+`Partida.registrar(nombre, guardar, cargar)`. Todo con el serializador de la
+simulación. Se escribe en un archivo nuevo que luego ocupa el sitio del
+viejo (el anterior queda como `partida.anterior.lua`).
+
+Se guarda sola cada 5 minutos, al salir del almacén o de una batalla y al
+cerrar el juego, y al abrirlo (pantalla de inicio → Invitado) sigue esa
+partida. F5 y F9 guardan y cargan a mano. Las pruebas y las capturas (todo lo
+que no abre en la pantalla de inicio) no guardan nada.
 
 ### Las escenas
 
@@ -129,14 +144,11 @@ Un mismo robot está repartido en tres sitios:
 
 ## Lo que está torcido (deuda), por orden de riesgo
 
-1. **Lo del almacén se guarda fuera de la partida.** Las cajas, los robots y
-   los ordenadores van en archivos propios, sin órdenes y sin la semilla de
-   la partida dentro de la simulación. En línea no viajarían, y al cargar
-   otra partida dependen de que el archivo «sea de la misma». Cuando haya
-   servidor, esto tendrá que pasar a la simulación o a un guardado único con
-   todo. Además, la partida (`partida.lua`) solo se guarda con F5, mientras
-   que el almacén se guarda solo cada 30 s y al cerrar: al abrir el juego
-   otra vez el mundo empieza de cero y el almacén sigue como estaba.
+1. **Lo del almacén va en la partida, pero fuera de la simulación.** Desde
+   el 26-nov las cajas y los ordenadores son una sección de `partida.lua`
+   (antes iban en archivos propios y el mundo solo se guardaba con F5). Siguen
+   sin órdenes: en línea no viajarían. Si otros jugadores tienen que ver tu
+   almacén, eso tendrá que pasar a la simulación.
 2. **Dos sistemas de vehículos.** `batalla/vehiculos/` (el viejo, con
    `GestorVehiculos`) sigue vivo en el lanzamisiles, `mundo/modelos3d.lua`,
    `batalla/articulacion_camion.lua` y en `robots/pieza.lua`. La decisión del
@@ -152,10 +164,8 @@ Un mismo robot está repartido en tres sitios:
 5. **Avisos de pantalla dentro de la simulación.** `sim:noticia` se usa
    desde fuera para mensajes de la interfaz; esos avisos no son del mundo
    vivo y no deberían ir en el guardado ni viajar por la red.
-6. **Tres serializadores iguales** (`mundo/simulacion/guardado.lua`,
-   `almacen/disposicion.lua`, `almacen/pc/guardado.lua`). Uno solo bastaría.
-7. **`MAPA-DEL-CODIGO.md` está viejo** (15-nov: no tiene `almacen/`,
+6. **`MAPA-DEL-CODIGO.md` está viejo** (15-nov: no tiene `almacen/`,
    `robots/` ni `campana/`) y su generador, `tools/generar_mapa_codigo.py`,
    ya no está en el repositorio.
-8. **`runtime/`** (19.056 líneas) es el runtime del editor de mapas; el juego
+7. **`runtime/`** (19.056 líneas) es el runtime del editor de mapas; el juego
    no lo carga.

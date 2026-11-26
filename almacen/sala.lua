@@ -23,6 +23,7 @@
 local dream = require('lib.3DreamEngine')
 local Dibujo = require('almacen.pc.dibujo')
 local Guardado = require('almacen.pc.guardado')
+local Memoria = require('almacen.memoria')
 local Ordenador = require('almacen.pc.ordenador')
 local Muro = require('almacen.pc.muro')
 local Depuracion = require('almacen.pc.depuracion')
@@ -101,12 +102,16 @@ function SalaControl.nueva(objeto, almacen)
     -- Los ordenadores de los puestos (lo que se dejó abierto, del almacén).
     -- Si el juego se cerró, lo que quedó guardado (almacen/pc/guardado.lua),
     -- con lo que enseñaba el muro.
-    if not almacen.ordenadores then
-        local ordenadores, muro = Guardado.leer(almacen, almacen:getSemilla())
-        almacen.ordenadores = ordenadores or {}
-        almacen.muro = almacen.muro or muro
+    -- Viven en la memoria del almacén de la nación (almacen/memoria.lua),
+    -- que se guarda con la partida.
+    local memoria = Memoria.de(almacen:getNacion())
+    if not memoria.ordenadores then
+        local ordenadores, muro = Guardado.leerViejo(almacen, almacen:getSemilla())
+        memoria.ordenadores = ordenadores or {}
+        memoria.muro = memoria.muro or muro
     end
-    almacen.muro = almacen.muro or Muro.porDefecto()
+    memoria.muro = memoria.muro or Muro.porDefecto()
+    almacen.ordenadores, almacen.muro = memoria.ordenadores, memoria.muro
     Muro.estado = almacen.muro
     Muro.sala = self
     self.almacen = almacen
@@ -221,9 +226,11 @@ function SalaControl:pintar()
     end
 end
 
---- Guarda en disco lo de los ordenadores (ventanas y carpetas personales).
+--- Deja lo de los ordenadores (ventanas, carpetas personales y muro) en la
+-- memoria del almacén, que va con la partida.
 function SalaControl:guardarOrdenadores()
-    Guardado.guardar(self.almacen, self.almacen:getSemilla(), self.almacen.ordenadores, self.almacen.muro)
+    local memoria = Memoria.de(self.almacen:getNacion())
+    memoria.ordenadores, memoria.muro = self.almacen.ordenadores, self.almacen.muro
 end
 
 --- Vuelve a pintar el ordenador `k` con los datos de la última lectura (el

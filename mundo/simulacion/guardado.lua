@@ -80,13 +80,20 @@ local NO_SE_GUARDA = { depositos = true }
 --- Texto con todo el estado vivo (para guardar la partida o enviarla a un
 -- servidor), sin lo que sale de la semilla (`NO_SE_GUARDA`).
 function Guardado.guardar(self)
+    return 'return ' .. serializar(Guardado.datosGuardado(self)) .. '\n'
+end
+
+--- El estado vivo que se guarda, como tabla (sin lo que sale de la
+-- semilla): para meterlo en un guardado con más secciones
+-- (partida/guardado.lua).
+function Guardado.datosGuardado(self)
     local estado = {}
     for k, v in pairs(self.estado) do
         if not NO_SE_GUARDA[k] then
             estado[k] = v
         end
     end
-    return 'return ' .. serializar(estado) .. '\n'
+    return estado
 end
 
 -- Sube `estado` (una partida vieja) hasta la versión actual, un paso por versión.
@@ -682,6 +689,12 @@ function Guardado.cargar(texto, opciones)
     if not ok or type(estado) ~= 'table' then
         return nil, ok and 'partida sin datos' or estado
     end
+    return Guardado.desdeEstado(estado, opciones)
+end
+
+--- La simulación de un estado ya leído (la tabla de `datosGuardado`): lo
+-- migra a la versión actual y rehace lo que sale de la semilla.
+function Guardado.desdeEstado(estado, opciones)
     -- Desde la 23 el guardado no trae yacimientos: se rehacen tras migrar.
     estado.depositos = estado.depositos or {}
     migrar(estado)
@@ -705,6 +718,8 @@ function Guardado.instalar(clase)
     clase.serializar = Guardado.serializar
     clase.guardar = Guardado.guardar
     clase.cargar = Guardado.cargar
+    clase.datosGuardado = Guardado.datosGuardado
+    clase.desdeEstado = Guardado.desdeEstado
 end
 
 return Guardado

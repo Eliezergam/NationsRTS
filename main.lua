@@ -85,6 +85,9 @@ local Inteligencia = require('interfaz.inteligencia')
 local Choques = require('mundo.choques')
 -- Registro para el agente (depurar/registro.lua, Andrés): `--registro [canales]`.
 local Registro = require('depurar.registro')
+-- La partida en un solo archivo, con autoguardado (partida/guardado.lua).
+local Partida = require('partida.guardado')
+local MemoriaAlmacen = require('almacen.memoria')
 local registro
 
 local mundo
@@ -173,6 +176,9 @@ local batallaCaptura -- `--batalla`: { modo, cuadros, combate }
 -- El almacén por dentro en 3D (almacen/escena.lua), o nil. Como la batalla:
 -- mientras está abierto, sus teclas y su ratón; Esc vuelve al mapa.
 local almacenVista
+local AUTOGUARDADO = 300
+local partidaLista = false
+local relojAutoguardado = 0
 local almacenAlEntrar -- `--almacen`: abre el juego dentro del almacén
 local almacenVideo -- `--almacen-video [salida.mp4]`: almacen/video_robot.lua
 local batallaVivo -- `--batalla-vivo`: { x, y, espera } hasta entrar en ella
@@ -249,6 +255,11 @@ end
 
 local function empezar(semilla)
     mundo = Mundo.nuevo(semilla)
+    -- Partida nueva: lo del almacén empieza vacío (si se carga una guardada,
+    -- lo pone su sección) y no se autoguarda hasta que el mundo esté hecho.
+    MemoriaAlmacen.cargar(nil)
+    partidaLista = false
+    relojAutoguardado = 0
     carga = { inicio = love.timer.getTime(), fraccion = 0 }
     camaraAntes = nil
     seleccionada = nil
@@ -310,28 +321,62 @@ local function provocarGuerra()
     end
 end
 
---- Guarda el mundo vivo en un archivo (el físico sale de la semilla).
+-- Autoguardado (el dueño, 26-nov): cada `AUTOGUARDADO` s de juego, al salir
+-- del almacén o de una batalla y al cerrar el juego; al abrirlo sigue la
+-- partida guardada. Solo en el juego normal (el que abre en la pantalla de
+-- inicio): las pruebas y las capturas no tocan la partida.
+-- `partidaLista`: el mundo ya está cargado (y, al abrir, la partida
+-- guardada puesta): antes no se guarda nada, para no pisar la partida con un
+-- mundo a medio hacer.
+
+--- Escribe la partida entera (el mundo vivo y lo del almacén). Devuelve
+-- true, o false y el motivo.
+local function escribirPartida()
+    -- Lo del almacén abierto, al día (cajas, ordenadores, muro).
+    if almacenVista and almacenVista.guardarDisposicion then
+        almacenVista:guardarDisposicion()
+    end
+    local t0 = love.timer.getTime()
+    local bien, motivo = Partida.guardar(mundo.sim)
+    print(string.format('PARTIDA guardada día %s en %.0f ms%s', tostring(mundo.sim.estado.dia), (love.timer.getTime() - t0) * 1000, bien and '' or (': ' .. tostring(motivo))))
+    relojAutoguardado = 0
+    return bien, motivo
+end
+
+--- Autoguardado: solo en el juego normal y con la partida lista.
+local function autoguardar()
+    if inicio.preguntar and partidaLista and mundo and mundo.sim then
+        escribirPartida()
+    end
+end
+
+--- F5 o «Guardar» de las opciones.
 local function guardarPartida()
-    love.filesystem.write('partida.lua', mundo.sim:guardar())
-    mundo.sim:noticia('Partida guardada (F9 para cargarla)', { 0.7, 1, 0.7 })
+    local bien, motivo = escribirPartida()
+    if bien then
+        mundo.sim:noticia('Partida guardada (F9 para cargarla)', { 0.7, 1, 0.7 })
+    else
+        mundo.sim:noticia('No se pudo guardar la partida: ' .. tostring(motivo), { 1, 0.7, 0.5 })
+    end
 end
 
 local function cargarPartida()
-    local texto = love.filesystem.read('partida.lua')
-    if not texto then
+    if not love.filesystem.getInfo(Partida.archivo) then
         mundo.sim:noticia('No hay partida guardada que cargar', { 1, 0.7, 0.5 })
         return
     end
-    local sim, err = Simulacion.cargar(texto, mundo:opcionesSimulacion())
+    local sim, ponerSecciones = Partida.cargar(mundo:opcionesSimulacion())
     if not sim then
-        mundo.sim:noticia('No se puede cargar la partida: ' .. tostring(err), { 1, 0.7, 0.5 })
+        mundo.sim:noticia('No se puede cargar la partida: ' .. tostring(ponerSecciones), { 1, 0.7, 0.5 })
         return
     end
     if sim.estado.semilla ~= mundo.semilla then
         empezar(sim.estado.semilla)
     end
     mundo:usarSimulacion(sim)
+    ponerSecciones()
     pregon:reiniciar()
+    print('PARTIDA cargada día ' .. tostring(sim.estado.dia))
     sim:noticia('Partida cargada: día ' .. sim.estado.dia, { 0.7, 1, 0.7 })
 end
 
@@ -444,7 +489,8 @@ end
 function inicio.entrarComoInvitado()
     inicio.login:cerrar()
     inicio.login = nil
-    inicio.empezarPartida(inicio.semilla)
+    -- Con una partida guardada, su mundo (se sigue al acabar de cargar).
+    inicio.empezarPartida(Partida.semilla() or inicio.semilla)
 end
 
 --- Lo que pide la pantalla de inicio: entrar como invitado o salir del juego.
@@ -467,6 +513,17 @@ function love.load(arg)
         return mundo and mundo.sim
     end, function()
         return jugador and jugador.jugador
+    end)
+    -- Lo que va en la partida además del mundo vivo (partida/guardado.lua):
+    -- lo del almacén 3D de cada nación y quién es el jugador.
+    Partida.registrar('almacen', MemoriaAlmacen.guardar, MemoriaAlmacen.cargar)
+    Partida.registrar('jugador', function()
+        return jugador
+    end, function(datos)
+        if type(datos) == 'table' and datos.jugador and mundo.sim:nacion(datos.jugador) then
+            jugador = datos
+            mundo.mira = datos.jugador
+        end
     end)
     -- Modo por defecto (NationsRTS, dueño 2026-09-29): --dream y --jugador
     -- siempre activos. Los agentes nuevos o sesiones sin acordarse de las
@@ -1336,6 +1393,15 @@ local function actualizarCarga()
             medicion.cuadroListo = 0
         end
         carga = nil
+        -- Al abrir el juego normal: sigue la partida guardada (la misma
+        -- semilla; `inicio.semillaGuardada` la eligió al empezar).
+        if inicio.preguntar and not inicio.continuada then
+            inicio.continuada = true
+            if Partida.semilla() == mundo.semilla then
+                cargarPartida()
+            end
+        end
+        partidaLista = true
         return
     end
     carga.fraccion, carga.detalle = mundo:cargar(vistaActual())
@@ -1940,6 +2006,11 @@ function love.update(dt)
     if carga and not galeria then
         actualizarCarga()
         return
+    end
+    relojAutoguardado = relojAutoguardado + dt
+    if relojAutoguardado >= AUTOGUARDADO then
+        autoguardar()
+        relojAutoguardado = 0
     end
     if medicion and captura then
         medirCuadro()
@@ -2962,6 +3033,8 @@ function salirDeBatalla()
     end
     enEscena = nil
     batalla = nil
+    -- Lo que dejó la batalla, guardado (partida/guardado.lua).
+    autoguardar()
 end
 
 --- Nombre de un sitio de la simulación: el de la ciudad o, si es una
@@ -4719,6 +4792,7 @@ function love.keypressed(tecla)
         if almacenVista:tecla(tecla) == 'salir' then
             almacenVista:cerrar()
             almacenVista = nil
+            autoguardar()
         end
         return
     end
@@ -4881,10 +4955,8 @@ function love.quit()
     if inicio.saliendo or not inicio.preguntar then
         -- Lo que han aprendido los robots (robots/conocimiento.lua).
         require('robots.conocimiento').guardarTodas()
-        -- Dónde quedó cada caja del almacén (almacen/disposicion.lua).
-        if almacenVista and almacenVista.guardarDisposicion then
-            almacenVista:guardarDisposicion()
-        end
+        -- La partida entera, con lo del almacén (partida/guardado.lua).
+        autoguardar()
         return false
     end
     if not inicio.dialogo.abierto then
