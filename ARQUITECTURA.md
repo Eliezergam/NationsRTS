@@ -94,8 +94,12 @@ que no se para nunca:
 | Lo que aprenden los robots | `robots/conocimiento.lua` | Directo | Archivos JSON propios |
 | Ajustes del jugador | `interfaz/ajustes.lua` | Directo | Su archivo |
 
-Comprobado en el código: nada fuera de la simulación escribe en
-`sim.estado`; todo lo que cambia el mundo vivo pasa por `ejecutar`. Las
+Comprobado en el código: fuera de la simulación nadie asigna en
+`sim.estado`, y casi todo lo que cambia el mundo vivo pasa por `ejecutar`.
+Hay dos excepciones: `sim:noticia(...)` desde `main.lua` e
+`interfaz/pendon.lua` (avisos de pantalla como «Partida guardada» que acaban
+dentro del estado guardado) y `Ayudas.cambiarRelacion` en la tecla G de
+`main.lua` (provocar una guerra de prueba). Las
 lecturas directas de `sim.estado` sí están repartidas: unas 59 en la
 interfaz, 59 en `main.lua`, 8 en la batalla y 6 en el almacén.
 
@@ -130,7 +134,9 @@ Un mismo robot está repartido en tres sitios:
    la partida dentro de la simulación. En línea no viajarían, y al cargar
    otra partida dependen de que el archivo «sea de la misma». Cuando haya
    servidor, esto tendrá que pasar a la simulación o a un guardado único con
-   todo.
+   todo. Además, la partida (`partida.lua`) solo se guarda con F5, mientras
+   que el almacén se guarda solo cada 30 s y al cerrar: al abrir el juego
+   otra vez el mundo empieza de cero y el almacén sigue como estaba.
 2. **Dos sistemas de vehículos.** `batalla/vehiculos/` (el viejo, con
    `GestorVehiculos`) sigue vivo en el lanzamisiles, `mundo/modelos3d.lua`,
    `batalla/articulacion_camion.lua` y en `robots/pieza.lua`. La decisión del
@@ -143,10 +149,13 @@ Un mismo robot está repartido en tres sitios:
    sitios), y la interfaz usa el dibujo de la batalla
    (`batalla/dream/calidad`, `biblioteca_pbr`). Lo de abajo no debería
    conocer lo de arriba: los colores del tema se pueden pasar como dato.
-5. **Tres serializadores iguales** (`mundo/simulacion/guardado.lua`,
+5. **Avisos de pantalla dentro de la simulación.** `sim:noticia` se usa
+   desde fuera para mensajes de la interfaz; esos avisos no son del mundo
+   vivo y no deberían ir en el guardado ni viajar por la red.
+6. **Tres serializadores iguales** (`mundo/simulacion/guardado.lua`,
    `almacen/disposicion.lua`, `almacen/pc/guardado.lua`). Uno solo bastaría.
-6. **`MAPA-DEL-CODIGO.md` está viejo** (15-nov: no tiene `almacen/`,
+7. **`MAPA-DEL-CODIGO.md` está viejo** (15-nov: no tiene `almacen/`,
    `robots/` ni `campana/`) y su generador, `tools/generar_mapa_codigo.py`,
    ya no está en el repositorio.
-7. **`runtime/`** (19.056 líneas) es el runtime del editor de mapas; el juego
+8. **`runtime/`** (19.056 líneas) es el runtime del editor de mapas; el juego
    no lo carga.
