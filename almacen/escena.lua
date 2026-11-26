@@ -881,49 +881,41 @@ function EscenaAlmacen:pruebaPC(dt)
         print('PRUEBA PC foto pc_' .. n .. '.png')
     end
     -- Iconos del escritorio en columnas de 6: el k-ésimo en
-    -- (74 + columna * 124, 24 + fila * 104 + 40); 8 = Muro (2.ª columna).
+    -- (74 + columna * 124, 24 + fila * 104 + 40); 1 = Carpeta personal.
     -- Un paso con función en vez de segundo espera a que se cumpla (y los
     -- segundos siguientes cuentan desde ahí).
-    local Muro = require('almacen.pc.muro')
-    -- Un punto del área de la ventana del Muro, en px del escritorio.
-    local function enMuro(x, y)
+    -- Un punto del área de la ventana de `programa`, en px del escritorio.
+    local function enVentana(programa, x, y)
         for _, pc in ipairs(self.sala.ordenadores) do
             for _, v in ipairs(pc.datos.ventanas) do
-                if v.programa == 'muro' then
+                if v.programa == programa then
                     return v.x + x, v.y + Ordenador.altoTitulo + y
                 end
             end
         end
         return 0, 0
     end
-    local function clicMuro(x, y)
-        local a, b = enMuro(x, y)
-        clic(a, b)
-    end
-    -- Filas de fuentes: x desde 612, y = 72 + (k - 1) * 36 (+16 al centro).
-    local function fuente(k)
-        clicMuro(700, 72 + (k - 1) * 36 + 16)
+    local function clicArchivos(x, y, boton)
+        local wx, wy = aVentana(enVentana('archivos', x, y))
+        love.event.push('mousemoved', wx, wy, 0, 0, false)
+        love.event.push('mousepressed', wx, wy, boton or 1, false, 1)
+        love.event.push('mousereleased', wx, wy, boton or 1, false, 1)
     end
     local guion = {
         { 4, function() tecla('e') end },
-        { 5.5, function() clic(74 + 124, 24 + 104 + 40, 2) end }, -- Muro
-        { 7, function() fuente(4) end }, -- las 4 grandes: robots
-        { 7.5, function() clicMuro(24 + 470, 96 + 40) end }, -- arriba a la derecha
-        { 8, function() fuente(5) end }, -- depuración
-        { 8.5, function() clicMuro(24 + 470, 96 + 160) end }, -- abajo a la derecha
-        { 9, function() fuente(9) end }, -- pantalla del puesto 4
+        { 5.5, function() clic(74, 24 + 40, 2) end }, -- Carpeta personal
+        { 7, foto },
+        { 7.5, function() clicArchivos(600, 420, 2) end }, -- botón derecho en vacío
+        { 8, foto },
+        { 8.5, function() clicArchivos(640, 395) end }, -- Carpeta nueva
+        { 9, function() escribir('pruebas') end },
+        { 9.5, function() clicArchivos(270, 100) end }, -- marcar la primera
         { 10, foto },
-        { 10.5, function() print('PRUEBA MURO ' .. Muro.que('grande') .. ' ' .. Muro.que('arriba') .. ' ' .. Muro.que('abajo')) end },
-        { 11, function() tecla('escape') end },
-        { 13, foto },
-        { 14, function() tecla('e') end },
-        { 15, function() clicMuro(24 + 172 + 80, 40 + 19) end }, -- Todo el muro
-        { 15.5, function() fuente(1) end }, -- el mapa en todo el muro
-        { 16, foto },
-        { 16.5, function() print('PRUEBA MURO todo=' .. tostring(Muro.estado.entero) .. ' ' .. Muro.estado.todo) end },
-        { 17, function() tecla('escape') end },
-        { 19, foto },
-        { 19.5, function() love.event.quit() end },
+        { 10.5, function() clicArchivos(870, 25) end }, -- vista de detalles
+        { 11, foto },
+        { 11.5, function() clicArchivos(100, 238) end }, -- Red del almacén
+        { 12, foto },
+        { 12.5, function() love.event.quit() end },
     }
     local paso = guion[self.pasoPrueba]
     if not paso then
@@ -1130,6 +1122,7 @@ end
 
 function EscenaAlmacen:rueda(dy)
     if self.usoPC:getActivo() then
+        self.usoPC:rueda(dy)
         return
     end
     self.controlador:empujar(dy * 1.5)

@@ -257,6 +257,13 @@ function UsoPC:texto(t)
     return self.estado ~= nil
 end
 
+--- La rueda del ratón: para la ventana activa del ordenador que se usa.
+function UsoPC:rueda(dy)
+    if self.estado == 'dentro' then
+        self.pc:rueda(dy)
+    end
+end
+
 --- Ratón de la ventana (`accion` 'pulsar', 'soltar' o 'mover'). Devuelve
 -- true si lo ha usado.
 function UsoPC:raton(accion, x, y, boton)

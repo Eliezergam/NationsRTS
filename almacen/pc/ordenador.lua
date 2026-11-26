@@ -299,6 +299,14 @@ function Ordenador:tecla(tecla)
     end
 end
 
+--- La rueda del ratón para la ventana activa.
+function Ordenador:rueda(dy)
+    local v = self:getActiva()
+    if v then
+        self:alPrograma(v, 'rueda', dy)
+    end
+end
+
 --- Texto escrito (love.textinput) para la ventana activa.
 function Ordenador:texto(t)
     local v = self:getActiva()
@@ -328,20 +336,16 @@ local function fondoEscritorio(self, w, h)
     g.printf(self.nombre:upper(), 0, h - Ordenador.altoPanel - 96, w - 40, 'right')
 end
 
-function Ordenador.iconoCarpeta(x, y, s, color)
-    local g = love.graphics
-    g.setColor(color[1] * 0.8, color[2] * 0.8, color[3] * 0.8)
-    g.rectangle('fill', x, y + s * 0.12, s * 0.45, s * 0.2, s * 0.06)
-    g.setColor(color)
-    g.rectangle('fill', x, y + s * 0.22, s, s * 0.66, s * 0.08)
+function Ordenador.iconoCarpeta(x, y, s, color, emblema)
+    require('almacen.pc.iconos').carpeta(x, y, s, color, emblema)
 end
 
 local function iconoPersonal(x, y, s)
-    Ordenador.iconoCarpeta(x, y, s, { 0.85, 0.66, 0.3 })
+    Ordenador.iconoCarpeta(x, y, s, { 0.88, 0.68, 0.3 }, 'casa')
 end
 
 local function iconoRed(x, y, s)
-    Ordenador.iconoCarpeta(x, y, s, { 0.36, 0.62, 0.9 })
+    Ordenador.iconoCarpeta(x, y, s, { 0.36, 0.62, 0.92 }, 'red')
 end
 
 -- Iconos del escritorio: carpetas y programas.
