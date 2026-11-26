@@ -809,6 +809,125 @@ function Mundo:dibujarResto(lejos)
     end
     if not estrategico or self.capas.ejercitos then
         self:dibujarFichas()
+        self:dibujarAviones()
+    end
+    g.setColor(1, 1, 1, 1)
+end
+
+-- Aviones de transporte (mundo/simulacion/aviones.lua) ----------------------------------------
+-- El modelo 3D del avión visto con el ángulo del mapa en 16 rumbos
+-- (tools/blender/avion_mapa.py), de tamaño fijo en pantalla como las fichas,
+-- en el aire sobre su sombra. Despega y aterriza en el primer y el último
+-- tramo de cada viaje.
+
+Mundo.anchoAvion = 130 -- px de pantalla de un cuadro de la hoja
+Mundo.alturaAvion = 46 -- px de pantalla sobre su sombra en vuelo
+Mundo.rampaAvion = 0.12 -- parte del viaje que tarda en subir (y en bajar)
+
+local avionMapa -- { hoja, cuadros, indice } (se carga al primer uso)
+
+local function cargarAvion()
+    if avionMapa == nil then
+        local indice = require('assets.mapa.avion.indice')
+        if love.filesystem.getInfo(indice.hoja) then
+            local hoja = love.graphics.newImage(indice.hoja, { mipmaps = true })
+            hoja:setFilter('linear', 'linear')
+            hoja:setMipmapFilter('linear')
+            local cuadros = {}
+            local w, h = hoja:getDimensions()
+            for k = 0, indice.rumbos - 1 do
+                cuadros[k] = love.graphics.newQuad(
+                    (k % 4) * indice.cuadro,
+                    math.floor(k / 4) * indice.cuadro,
+                    indice.cuadro,
+                    indice.cuadro,
+                    w,
+                    h
+                )
+            end
+            avionMapa = { hoja = hoja, cuadros = cuadros, indice = indice }
+        else
+            avionMapa = false
+        end
+    end
+    return avionMapa or nil
+end
+
+--- Dónde va el vuelo `v` ahora (entre el paso anterior y el actual), su
+-- rumbo (rad, en el plano del mapa) y cuánto lleva del viaje (0 a 1).
+function Mundo:posicionVuelo(v, fraccion)
+    local e = self.sim.estado
+    local x = v.antesX + (v.x - v.antesX) * fraccion
+    local y = v.antesY + (v.y - v.antesY) * fraccion
+    local dx, dy, t
+    local gr = e.grupos[v.grupo]
+    if v.fase == 'llevar' and gr and gr.largo and gr.largo > 0 then
+        local r = gr.ruta
+        dx, dy = r[#r - 1] - r[1], r[#r] - r[2]
+        t = gr.recorrido / gr.largo
+    else
+        dx, dy = v.dx - v.ox, v.dy - v.oy
+        t = v.largo > 0 and v.recorrido / v.largo or 1
+    end
+    if dx == 0 and dy == 0 then
+        dx, dy = v.x - v.antesX, v.y - v.antesY
+    end
+    return x, y, math.atan2(dy, dx), t
+end
+
+function Mundo:dibujarAviones()
+    local e = self.sim.estado
+    local avion = e.vuelos and next(e.vuelos) and cargarAvion()
+    if not avion then
+        return
+    end
+    local g = love.graphics
+    local k = 1 / math.max(0.05, self.zoom or 1)
+    local fraccion = self.sim:fraccionPaso()
+    local cuadro = avion.indice.cuadro
+    local escala = Mundo.anchoAvion / cuadro * k
+    local rumbos = avion.indice.rumbos
+    local lista = {}
+    for _, id in ipairs(Simulacion.ordenadas(e.vuelos)) do
+        local v = e.vuelos[id]
+        local x, y, rumbo, t = self:posicionVuelo(v, fraccion)
+        local vx, vy = Iso.vista(x, y, self.terreno:altura(x, y))
+        if self:enVista(vx, vy) then
+            -- Sube al salir y baja al llegar.
+            local rampa = Mundo.rampaAvion
+            local alto = math.max(0, math.min(1, t / rampa, (1 - t) / rampa))
+            lista[#lista + 1] = { v = v, vx = vx, vy = vy, rumbo = rumbo, alto = alto }
+        end
+    end
+    -- Las sombras primero (en el suelo), luego los aviones, de atrás adelante.
+    table.sort(lista, function(a, b)
+        return a.vy < b.vy
+    end)
+    for _, a in ipairs(lista) do
+        local cuadroK = math.floor(((a.rumbo % (2 * math.pi)) / (2 * math.pi)) * rumbos + 0.5) % rumbos
+        a.cuadro = avion.cuadros[cuadroK]
+        g.setColor(0, 0, 0, 0.28 * (0.4 + 0.6 * a.alto))
+        g.draw(avion.hoja, a.cuadro, a.vx, a.vy, 0, escala, escala * 0.55, cuadro / 2, cuadro / 2)
+    end
+    for _, a in ipairs(lista) do
+        local sobre = a.vy - Mundo.alturaAvion * k * a.alto
+        g.setColor(1, 1, 1, 1)
+        g.draw(avion.hoja, a.cuadro, a.vx, sobre, 0, escala, escala, cuadro / 2, cuadro / 2)
+        -- Su nación: un disco de su color encima; con varios aviones, cuántos.
+        local n = e.naciones[a.v.nacion]
+        local color = n and n.color or { 0.8, 0.8, 0.8 }
+        local r = 6 * k
+        local cy = sobre - 30 * k
+        g.setColor(0.08, 0.08, 0.09, 0.9)
+        g.circle('fill', a.vx, cy, r + 2 * k)
+        g.setColor(color[1], color[2], color[3], 1)
+        g.circle('fill', a.vx, cy, r)
+        if #a.v.aviones > 1 then
+            g.setColor(1, 1, 1, 1)
+            local letra = Tema.fuente('sansNegrita', 13)
+            g.setFont(letra)
+            g.print('×' .. #a.v.aviones, a.vx + r + 4 * k, cy - letra:getHeight() * k / 2, 0, k, k)
+        end
     end
     g.setColor(1, 1, 1, 1)
 end
@@ -1345,6 +1464,9 @@ function Mundo:fichasGrupos()
                     self.fichas[#self.fichas + 1] = par
                 end
             end
+        elseif Simulacion.Aviones.vuela(gr) then
+            -- Va en avión (o lo espera): se ve el avión, no su ficha
+            -- (`dibujarAviones`).
         else
             -- La altura sale de la semilla: la ficha se ve aunque su trozo de
             -- terreno aún no se haya generado.

@@ -56,6 +56,25 @@
 - **Combustible**: cada vuelo gasta petróleo según la distancia.
 - **Convoyes de obra** (construir instalaciones): también en avión.
 
+## Hecho (26-nov)
+
+- **Paso 1, simulación** (`mundo/simulacion/aviones.lua`, versión 31): flota
+  por nación, vuelos (buscar → llevar → volver), carga en toneladas, cola por
+  orden de id, fabricación en la ciudad (orden `fabricarAvion`) y la IA
+  encarga uno cuando alguien suyo espera avión (hasta 6). Sin choques en campo
+  abierto (`Simulacion.choquesEnCampo = false`). La IA de recolección no manda
+  a nadie más mientras alguien suyo espera avión.
+- **Paso 2, mapa**: el avión con el modelo 3D en 16 rumbos
+  (`tools/blender/avion_mapa.py` → `assets/mapa/avion/`), su sombra y un disco
+  del color de su nación; sube y baja en el primer y último 12 % del viaje. Lo
+  que vuela o espera avión ya no tiene ficha. Captura: `--captura ... avion`.
+
+Medido sin pantalla (semilla 2026, 60 días, 5 naciones): unos 10 grupos
+esperando avión en cada momento, sin atascarse. Ninguna nación llega a
+fabricar un 2.º avión (no junta 200 de dinero y 40 de metal), y el metal
+recolectado baja mucho frente a antes (las que tenían 167-190 de metal a los
+60 días tienen 16-51): un solo avión es un cuello de botella.
+
 ## Pasos (uno cada vez, enseñado y aprobado antes del siguiente)
 
 1. **Simulación**: el vuelo reemplaza la marcha. Línea recta (cruza el agua),

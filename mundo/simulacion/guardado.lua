@@ -674,6 +674,22 @@ local function migrar(estado)
         sinTanques(estado)
         estado.version = 30
     end
+    if estado.version == 30 then
+        -- Aviones de transporte (aviones.lua): 1 en cada capital. Los grupos que
+        -- iban de camino esperan avión donde estaban.
+        estado.aviones = {}
+        estado.vuelos = {}
+        estado.siguienteAvion = 1
+        for _, nid in ipairs(ordenadas(estado.naciones)) do
+            local n = estado.naciones[nid]
+            if estado.ciudades[n.capital] then
+                local id = estado.siguienteAvion
+                estado.siguienteAvion = id + 1
+                estado.aviones[id] = { id = id, nacion = nid, base = n.capital }
+            end
+        end
+        estado.version = 31
+    end
 end
 
 --- Simulación con el estado del texto `texto` (de `guardar`), migrado si es de una

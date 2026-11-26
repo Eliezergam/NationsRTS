@@ -55,7 +55,7 @@ local grupoEnCamino = Ayudas.grupoEnCamino
 local Simulacion = {}
 Simulacion.__index = Simulacion
 
-Simulacion.version = 30 -- 4: rutas por tierra; 5: granero; 6: niveles; 7: dinero por ciudad; 8: colores de país;
+Simulacion.version = 31 -- 4: rutas por tierra; 5: granero; 6: niveles; 7: dinero por ciudad; 8: colores de país;
 -- 9: mapa a escala (las ciudades cambian de sitio: las partidas anteriores no sirven)
 -- 10: sin rutas ni carreteras (los grupos aparecen donde van);
 -- 11: solo capitales; los campamentos producen (las partidas anteriores no sirven)
@@ -104,6 +104,8 @@ Simulacion.version = 30 -- 4: rutas por tierra; 5: granero; 6: niveles; 7: diner
 -- 29: almacén de cada nación (mundo/simulacion/almacen.lua, diseno/almacen.md): `e.almacenes`
 -- 30: sin tanques ni obuses (19-nov, un mundo de robots): los de la partida se devuelven en lo que
 --     costaron y la tecnología de los tanques sale de la fila (guardado.lua, `sinTanques`)
+-- 31: aviones de transporte (mundo/simulacion/aviones.lua): todo viaje va en avión (`e.aviones`,
+--     `e.vuelos`, `g.vuelo`, `c.obraAviones`); sin choques en campo abierto
 Simulacion.Averias = Averias
 Simulacion.maxNoticias = 60
 
@@ -485,6 +487,9 @@ Simulacion.velocidadEjercito = 9000 -- px por día de un ejército (ataques, ref
 -- cada 83 ms; medido con 24 y 348 naciones, la marcha cuesta 0,8 veces lo que
 -- el resto del día (con 1440, 1,5 veces).
 Simulacion.pasosDia = 720 -- pasos de marcha por día
+-- Choques entre ejércitos por el camino: ya no (todo va en avión y solo se
+-- pelea en minas y ciudades). Queda el código por si se vuelve a querer.
+Simulacion.choquesEnCampo = false
 Simulacion.marchaSinActivos = false -- true: cada paso mira todos los grupos (para comprobar `moverPaso`)
 Simulacion.intentosRuta = 6 -- depósitos que se prueban por día hasta dar con uno al que se llegue por tierra
 -- Misiles y aviones ya no vuelan por el mapa (diseno/recoleccion-y-batallas.md,
@@ -903,6 +908,8 @@ function Simulacion.nueva(semilla, opciones)
         siguienteExplorador = 1,
         informes = {}, -- nación -> { sitios, grupos } (ver `llegadaExploradores`)
         almacenes = {}, -- nación -> { misiles } (ver mundo/simulacion/almacen.lua)
+        aviones = {}, -- id -> { id, nacion, base } (ver mundo/simulacion/aviones.lua)
+        vuelos = {}, -- id -> vuelo en curso
     }
     self.sitioValido = opciones and opciones.sitioValido
     self.eventos = {}
@@ -1468,6 +1475,8 @@ function Simulacion:registrarZona(zona)
         ),
         nacion.color
     )
+    -- Su primer avión, en la capital (mundo/simulacion/aviones.lua).
+    self:avionInicial(nid)
     return nacion
 end
 
@@ -1685,6 +1694,8 @@ function Simulacion:ejecutar(c)
         return self:escenarioPrueba(c)
     elseif t == 'reparar' then
         return self:reparar(c.nacion, c.ciudad, c.puntos)
+    elseif t == 'fabricarAvion' then
+        return self:fabricarAvion(c.nacion, c.ciudad)
     elseif t == 'bandera' then
         return self:plantarBandera(c.nacion, c.x, c.y)
     elseif t == 'recolectar' then
@@ -4136,6 +4147,10 @@ function Simulacion:pasoDeMarcha(g)
         if g.recorrido >= g.largo then
             return 0
         end
+        -- Todo viaje largo va en avión: espera el suyo y vuela a su velocidad.
+        if Simulacion.Aviones.vuela(g) then
+            return self:pasoEnAvion(g)
+        end
     elseif g.x == g.destinoX and g.y == g.destinoY then
         return 0
     end
@@ -4175,8 +4190,13 @@ end
 -- (`marchaSinActivos`; lo comprueba tests/test_nationsrts_marcha.lua).
 function Simulacion:moverPaso()
     local e = self.estado
+    -- Los aviones primero: uno que llega a buscar a su grupo lo pone en marcha.
+    self:moverVuelos()
     local llegan = {}
-    local enGuerra = self:nacionesEnGuerra()
+    local esperan = {} -- grupos que esperan avión (mundo/simulacion/aviones.lua)
+    -- Sin choques en campo abierto: solo se pelea en minas y ciudades
+    -- (diseno/aviones-de-transporte.md).
+    local enGuerra = Simulacion.choquesEnCampo and self:nacionesEnGuerra()
     local candidatos = enGuerra and {}
     local activos = self.activos
     local recorrer, pasos
@@ -4232,11 +4252,15 @@ function Simulacion:moverPaso()
                     end
                 end
             end
-            local choca = puedeChocar(g)
+            local choca = candidatos and puedeChocar(g)
             if candidatos and choca and enGuerra[g.nacion] then
                 candidatos[#candidatos + 1] = g
             end
-            if paso > 0 or choca then
+            local espera = paso == 0 and not (g.batalla or g.detenido) and Simulacion.Aviones.vuela(g)
+            if espera and not g.vuelo then
+                esperan[#esperan + 1] = g
+            end
+            if paso > 0 or choca or espera then
                 n = n + 1
                 siguen[n], pasosSiguen[n] = g, paso
             end
@@ -4249,6 +4273,9 @@ function Simulacion:moverPaso()
     local cambios = self.cambiosMarcha
     if candidatos then
         self:detectarChoques(candidatos)
+    end
+    if #esperan > 0 then
+        self:asignarAviones(esperan)
     end
     for _, g in ipairs(llegan) do
         -- Una llegada puede borrar otros grupos: esos ya no llegan.
@@ -4388,6 +4415,7 @@ function Simulacion:terminarDia()
     self:resolverBatallas(azar)
     self:asaltarTrasChoque()
     self:recolectarDia()
+    self:diaAviones()
     -- Banderas guardadas que ya están normales o que ya no son de borde, y su guarnición.
     self:revisarBanderas()
     self:recuperar()
@@ -4430,6 +4458,8 @@ end
 -- Guardar y cargar (mundo/simulacion/guardado.lua) -------------------------------------------
 require('mundo.simulacion.guardado').instalar(Simulacion)
 require('mundo.simulacion.recoleccion').instalar(Simulacion)
+-- Aviones de transporte (mundo/simulacion/aviones.lua) -----------------------------------------
+require('mundo.simulacion.aviones').instalar(Simulacion)
 
 --- Avanza el tiempo real: `velocidad` días por segundo, en pasos de marcha
 -- (`pasosDia` por día). `self.reloj` es la parte del paso siguiente que ya

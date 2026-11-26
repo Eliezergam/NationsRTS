@@ -730,6 +730,9 @@ function love.load(arg)
                 -- cola, con su panel abierto. Al encontrarlo, el tiempo vuelve a
                 -- ir a 1 día por minuto y la foto sale `retrasoFoto` cuadros después.
                 retirada = arg[k + 7] == 'retirada' or nil,
+                -- `avion`: la cámara va al primer avión de transporte que lleva
+                -- un grupo, a mitad de viaje (mundo/simulacion/aviones.lua).
+                avion = arg[k + 7] == 'avion' or nil,
                 vuelta = arg[k + 7] == 'vuelta' or nil,
                 recuperacion = (arg[k + 7] == 'recuperacion' or arg[k + 7] == 'acelerar') or nil,
                 -- `acelerar`: como `recuperacion`, pero a los 20 cuadros hace clic
@@ -1325,6 +1328,14 @@ function buscarRetiradaParaCaptura()
             local peso = r and (r.soldados + r.lanzacohetes * 400) or 0
             if fisica and peso > mayor and peso >= captura.pesoMinimo then
                 mayor, visto = peso, { x = c.x, y = c.y, ciudad = fisica }
+            end
+        end
+    elseif captura.avion then
+        for _, id in ipairs(Simulacion.ordenadas(e.vuelos or {})) do
+            local v = e.vuelos[id]
+            local gr = e.grupos[v.grupo]
+            if not visto and v.fase == 'llevar' and gr and gr.largo > 0 and gr.recorrido / gr.largo > 0.3 then
+                visto = { vuelo = v }
             end
         end
     else
@@ -2203,7 +2214,7 @@ function love.update(dt)
         if captura.base and not captura.enBase then
             buscarBaseParaCaptura()
         end
-        local buscaGrupo = captura.retirada or captura.vuelta or captura.recuperacion or captura.ataque
+        local buscaGrupo = captura.retirada or captura.vuelta or captura.recuperacion or captura.ataque or captura.avion
         if buscaGrupo and not captura.visto then
             buscarRetiradaParaCaptura()
         end
@@ -2212,6 +2223,8 @@ function love.update(dt)
             if captura.visto.grupo then
                 local f = mundo.sim:fraccionPaso()
                 x, y = mundo:posicionVisible(captura.visto.grupo, f)
+            elseif captura.visto.vuelo then
+                x, y = mundo:posicionVuelo(captura.visto.vuelo, mundo.sim:fraccionPaso())
             end
             if x then
                 camara.x, camara.y = Iso.vista(x, y, mundo.terreno:altura(x, y))

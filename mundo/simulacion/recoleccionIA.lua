@@ -114,6 +114,13 @@ function RecoleccionIA:planearRecoleccion(n)
     if not capital or capital.nacion ~= n.id then
         return
     end
+    -- Todo viaja en avión (aviones.lua): mientras alguien suyo espera avión,
+    -- no manda a nadie más (se quedaría también esperando).
+    for _, g in ipairs(self:gruposDe(n.id)) do
+        if Simulacion.Aviones.vuela(g) and not g.vuelo then
+            return
+        end
+    end
     -- Lo que ya viene (la carga y el hueco de sus recolectores), lo que ya
     -- pidió a cada mina y los soldados que salieron de cada puesto.
     local enCamino, pedido, fuera = {}, {}, {}
