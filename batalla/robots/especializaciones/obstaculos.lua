@@ -41,7 +41,7 @@ end
 
 function Obstaculos:onLoad()
     local d = self.datos.obstaculos
-    d.desvio, d.reloj = 0, 0
+    d.desvio, d.reloj = 0, self:getDesfase(Obstaculos.cada)
     d.choques = 0
     d.puntos = {}
     d.recuerdo = {} -- [celda] = { x, y, hasta }

@@ -40,6 +40,20 @@ local Asalto = {}
 Asalto.celda = 4 -- m de la rejilla de rutas
 Asalto.margen = 70 -- m a cada lado de la línea recta
 Asalto.celdaLejos = 8 -- m, con el objetivo a más de 400 m
+-- Espacio libre (m) que deja cada tramo de la ruta a cada lado, de lo sólido
+-- (27-nov): al quitar puntos y suavizar, una recta entre dos puntos cortaba
+-- por en medio de un tronco que la rejilla sí rodeaba, y el robot iba directo
+-- contra él hasta que el esquive lo paraba en seco. Algo más que el pasillo
+-- que mira obstaculos.lua (0,32 + 0,9 m): así no le salta en una ruta buena.
+Asalto.holguraRuta = 1.3
+Asalto.pasoHolgura = 0.75 -- m entre las muestras de un tramo
+Asalto.saltoMaximo = 4 -- celdas que puede saltarse un tramo como mucho
+-- Tiempo (s) por cuadro para calcular rutas, entre todos los robots: el
+-- cálculo va por partes (una corrutina que cede el cuadro) y sigue en el
+-- siguiente (27-nov: con 40 robots, una ruta de golpe tardaba hasta 130 ms).
+Asalto.presupuestoRutas = 0.003
+-- s que espera para volver a buscar ruta si no la hay (mientras, en recta).
+Asalto.esperaSinRuta = 1.5
 Asalto.margenLejos = 0.45 -- del largo, a cada lado, de lejos
 Asalto.desvio = 45 -- m: lo que se abren las rutas de los flancos
 Asalto.pendienteMaxima = 24 -- grados
@@ -120,7 +134,7 @@ function Asalto:onLoad()
     d.tambor, d.vTambor, d.retroceso = 0, 0, 0
     d.disparos, d.chispas = {}, {}
     d.balas, d.aciertos = 0, 0
-    d.verReloj = 0
+    d.verReloj = self:getDesfase(Asalto.verCada)
 end
 
 -- Puntos del cuerpo ----------------------------------------------------------
@@ -154,6 +168,15 @@ end
 -- Rutas ----------------------------------------------------------------------
 
 -- Rejilla en los ejes de la línea recta: u hacia el objetivo, v a la izquierda.
+-- Hasta cuándo puede seguir el cálculo de ruta en curso antes de ceder el
+-- cuadro (nil: de una vez, fuera de una corrutina).
+local finCalculo
+local function ceder()
+    if finCalculo and love.timer.getTime() > finCalculo then
+        coroutine.yield()
+    end
+end
+
 local function rejilla(self, d)
     local x0, y0 = self.x, self.y
     local x1, y1 = d.objetivo[1], d.objetivo[2]
@@ -226,6 +249,7 @@ local function rejilla(self, d)
             end
             R.c[i * R.nv + j] = info
         end
+        ceder()
     end
     R.cuenta = cuenta
     R.costeExpuesto = d.recorrer and Asalto.costeExpuestoRecorrer or nil
@@ -292,7 +316,12 @@ local function aEstrella(R, ia, ja, ib, jb)
     local de = {}
     local cerrado = {}
     local c = R.celda
+    local vueltas = 0
     while #abiertos > 0 do
+        vueltas = vueltas + 1
+        if vueltas % 64 == 0 then
+            ceder()
+        end
         local mejor = sacar()
         local ck = clave(mejor.i, mejor.j)
         if not cerrado[ck] then
@@ -352,8 +381,27 @@ end
 
 -- Paradas: cada `paradaCada` m como poco, donde hay cobertura (detrás de
 -- ella, según de dónde viene el enemigo) o donde el enemigo no ve.
+-- ¿Deja libre el tramo de (ax, ay) a (bx, by) `holgura` m a cada lado de
+-- todo lo sólido (troncos, rocas, edificios, muro)? Muestras cada
+-- `pasoHolgura` m contra las colisiones (batalla/colisiones.lua).
+local cercanasTramo = {}
+local function tramoLibre(ax, ay, bx, by, holgura)
+    local dx, dy = bx - ax, by - ay
+    local largo = math.sqrt(dx * dx + dy * dy)
+    local n = math.max(1, math.ceil(largo / Asalto.pasoHolgura))
+    for k = 0, n do
+        local x, y = ax + dx * k / n, ay + dy * k / n
+        for _, c in ipairs(Mundo.cerca(x, y, holgura, 'solido', cercanasTramo)) do
+            if Colisiones.distancia(c, x, y) < holgura then
+                return false
+            end
+        end
+    end
+    return true
+end
+
 local function paradas(R, celdas, objetivo, sinParadas)
-    local puntos = {}
+    local todos = {}
     local recorrido, ultima = 0, 0
     local px, py
     for n, k in ipairs(celdas) do
@@ -382,27 +430,55 @@ local function paradas(R, celdas, objetivo, sinParadas)
                 p.cobertura = c
             end
         end
-        -- Un punto de paso cada dos celdas (y las paradas y el final).
-        if n % 2 == 1 or p.parada or final then
-            puntos[#puntos + 1] = p
-        end
+        todos[#todos + 1] = p
     end
-    puntos[#puntos].final = true
-    -- Sin zigzag: la rejilla da escalones de 45°; promediando cada punto con
-    -- sus vecinos (tres pasadas) la ruta queda en curvas suaves y el robot no
-    -- se tuerce a un lado y a otro corriendo. Las paradas no se mueven.
+    -- Un tramo de celda a celda vecina se da por bueno (la rejilla ya dejó
+    -- sus celdas libres con su engorde, aunque sea en un hueco justo entre
+    -- dos naves); se comprueban los tramos nuevos que salen al suavizar o al
+    -- saltarse celdas.
+    local function libre(a, b)
+        return tramoLibre(a.x, a.y, b.x, b.y, Asalto.holguraRuta)
+    end
+    -- 1. Sin zigzag: la rejilla da escalones de 45°; cada punto se acerca al
+    -- promedio con sus vecinos (tres pasadas) solo si los dos tramos que
+    -- toca siguen libres. Las paradas no se mueven.
     for _ = 1, 3 do
-        local nuevos = {}
-        for n, p in ipairs(puntos) do
-            local a, b = puntos[n - 1], puntos[n + 1]
-            if a and b and not p.parada then
-                nuevos[n] = { (a.x + 2 * p.x + b.x) / 4, (a.y + 2 * p.y + b.y) / 4 }
+        for n = 2, #todos - 1 do
+            ceder()
+            local p = todos[n]
+            if not p.parada then
+                local a, b = todos[n - 1], todos[n + 1]
+                local q = { x = (a.x + 2 * p.x + b.x) / 4, y = (a.y + 2 * p.y + b.y) / 4 }
+                if libre(a, q) and libre(q, b) then
+                    p.x, p.y = q.x, q.y
+                end
             end
         end
-        for n, q in pairs(nuevos) do
-            puntos[n].x, puntos[n].y = q[1], q[2]
-        end
     end
+    -- 2. Menos puntos: de cada punto, al más lejano (hasta `saltoMaximo`
+    -- celdas) al que se llega en recta con la holgura; las paradas y el
+    -- final se quedan siempre.
+    local puntos = { todos[1] }
+    local n = 1
+    while n < #todos do
+        ceder()
+        local siguiente = n + 1
+        for m = math.min(#todos, n + Asalto.saltoMaximo), n + 2, -1 do
+            local hayParada = false
+            for k = n + 1, m - 1 do
+                if todos[k].parada then
+                    hayParada = true
+                end
+            end
+            if not hayParada and libre(todos[n], todos[m]) then
+                siguiente = m
+                break
+            end
+        end
+        puntos[#puntos + 1] = todos[siguiente]
+        n = siguiente
+    end
+    puntos[#puntos].final = true
     return puntos
 end
 
@@ -429,13 +505,14 @@ local function medir(R, celdas)
     return largo, expuesto, pendiente / math.max(1, largo), coberturas
 end
 
+--- Las rutas hasta `d.objetivo`. Puede ir por partes dentro de una
+-- corrutina (trabajarRuta): la rejilla y las rutas se publican al acabar.
 local function planificar(self, d)
     local t0 = love.timer.getTime()
     local R = rejilla(self, d)
-    d.rejilla = R
     local ia, ja = libreCerca(R, R.celdaDe(self.x, self.y))
     local ib, jb = libreCerca(R, R.celdaDe(d.objetivo[1], d.objetivo[2]))
-    d.rutas = {}
+    local rutas = {}
     for _, f in ipairs({ { 'izquierda', 1 }, { 'centro', 0 }, { 'derecha', -1 } }) do
         local mx = self.x + R.fx * R.largo / 2 + R.lx * Asalto.desvio * f[2]
         local my = self.y + R.fy * R.largo / 2 + R.ly * Asalto.desvio * f[2]
@@ -451,16 +528,17 @@ local function planificar(self, d)
                 celdas[#celdas + 1] = b[n]
             end
             local largo, expuesto, pendiente, coberturas = medir(R, celdas)
-            d.rutas[#d.rutas + 1] = {
+            rutas[#rutas + 1] = {
                 nombre = f[1], celdas = celdas, coste = ca + cb,
                 largo = largo, expuesto = expuesto, pendiente = pendiente, coberturas = coberturas,
                 puntos = paradas(R, celdas, d.amenaza or d.objetivo, d.recorrer ~= nil or not Asalto.conParadas),
             }
         end
     end
-    table.sort(d.rutas, function(a, b)
+    table.sort(rutas, function(a, b)
         return a.coste < b.coste
     end)
+    d.rejilla, d.rutas = R, rutas
     for n, r in ipairs(d.rutas) do
         print(string.format('%s ruta por %-9s %4.0f m, %3.0f m a la vista del enemigo, pendiente %.0f°, %d coberturas: coste %.0f%s',
             d.nombre, r.nombre, r.largo, r.expuesto, r.pendiente, r.coberturas, r.coste, n == 1 and '  <- ELIJO' or ''))
@@ -596,6 +674,8 @@ local function replanificar(self, d, e)
         return
     end
     d.replanificado = d.reloj
+    -- La ruta de patrulla que se estuviera calculando ya no sirve.
+    d.trabajoRuta = nil
     local anterior = { d.objetivo, d.ruta, d.rutas, d.indice, d.rejilla }
     d.objetivo = { e.x, e.y }
     print(string.format('%s t=%.1f s rutas nuevas hacia donde está %s:', d.nombre, d.reloj, e.datos.asalto.nombre))
@@ -825,6 +905,64 @@ end
 
 -- Recorrer ---------------------------------------------------------------------
 
+--- Sigue calculando la ruta en curso con lo que quede del presupuesto de
+-- este cuadro (compartido por todos los robots). true cuando ha acabado.
+local function trabajarRuta(self, d)
+    local g = self.gestor
+    local cuadro = g.cuadro or 0
+    if g.cuadroRutas ~= cuadro then
+        g.cuadroRutas, g.tiempoRutas = cuadro, 0
+    end
+    local queda = Asalto.presupuestoRutas - g.tiempoRutas
+    if queda <= 0 then
+        return false
+    end
+    local t0 = love.timer.getTime()
+    finCalculo = t0 + queda
+    local trabajo = d.trabajoRuta
+    local bien, fallo = coroutine.resume(trabajo, self, d)
+    finCalculo = nil
+    g.tiempoRutas = g.tiempoRutas + love.timer.getTime() - t0
+    if not bien then
+        error(debug.traceback(trabajo, fallo), 0)
+    end
+    if coroutine.status(trabajo) == 'dead' then
+        d.trabajoRuta = nil
+        return true
+    end
+    return false
+end
+
+--- Con la ruta ya calculada: a seguirla o, si no la hay, en recta un rato.
+local function rutaLista(self, d)
+    local R = d.recorrer
+    if d.ruta then
+        -- Mientras se calculaba ha seguido andando: desde el punto más
+        -- cercano de los primeros.
+        local puntos = d.ruta.puntos
+        local cerca, mejor = math.huge, 1
+        for n = 1, math.min(#puntos, 8) do
+            local p = puntos[n]
+            local dd = (p.x - self.x) ^ 2 + (p.y - self.y) ^ 2
+            if dd < cerca then
+                cerca, mejor = dd, n
+            end
+        end
+        d.indice = mejor
+        irAlPunto(self, d)
+    else
+        -- Sin camino por la rejilla hasta allí (27-nov: un robot en un hueco
+        -- recalculaba su ruta en cada cuadro, 1.289 veces en un minuto): la
+        -- patrulla aparta ese sitio un rato, el robot sigue en recta (el
+        -- esquive lo lleva) y no vuelve a buscar ruta hasta dentro de
+        -- `esperaSinRuta` s.
+        if R and R.patrulla then
+            R.patrulla:fallo(self, d.reloj)
+        end
+        d.sinRutaHasta = d.reloj + Asalto.esperaSinRuta
+    end
+end
+
 -- Un sitio nuevo del campo: lejos de donde está y de los últimos destinos.
 local function nuevoDestino(self, d)
     local R = d.recorrer
@@ -832,7 +970,15 @@ local function nuevoDestino(self, d)
     local mejor, mejorPuntos
     local e = enemigos(self, d)[1]
     local pasada = e and love.math.random() < Asalto.pasada
-    for _ = 1, 60 do
+    -- Con patrulla compartida (batalla/robots/patrulla.lua): a la parte del
+    -- recinto que lleva más rato sin que la vea nadie.
+    if R.patrulla and not pasada then
+        local px, py = R.patrulla:elegir(self, self.x, self.y, d.reloj, R.minimo, R.maximo)
+        if px then
+            mejor, mejorPuntos = { px, py }, 0
+        end
+    end
+    for _ = 1, mejor and 0 or 60 do
         local a = love.math.random() * 2 * math.pi
         local r = R.radio * math.sqrt(love.math.random())
         local x, y = R.cx + math.cos(a) * r, R.cy + math.sin(a) * r
@@ -871,10 +1017,13 @@ local function nuevoDestino(self, d)
     -- sabe nada, ningún sitio cuenta como expuesto).
     d.amenaza = d.enemigoEn or { self.x + 100000, self.y }
     print(string.format('%s t=%.1f s voy a otro sitio, a %.0f m%s', d.nombre, d.reloj, math.sqrt((mejor[1] - self.x) ^ 2 + (mejor[2] - self.y) ^ 2), pasada and mejorPuntos and (', pasando junto a ' .. e.datos.asalto.nombre) or ''))
-    planificar(self, d)
-    d.indice = 1
-    if d.ruta then
-        irAlPunto(self, d)
+    -- La ruta, por partes (trabajarRuta); mientras, en recta hacia allí.
+    d.ruta = nil
+    d.trabajoRuta = coroutine.create(planificar)
+    self:setVelocidadMaxima(Asalto.velocidad)
+    self:setIrA(mejor[1], mejor[2], nil, true)
+    if trabajarRuta(self, d) then
+        rutaLista(self, d)
     end
 end
 
@@ -890,11 +1039,21 @@ function Asalto.recorrer(self, d, dt)
         if #d.rastro > 360 then
             table.remove(d.rastro, 1)
         end
+        if d.recorrer and d.recorrer.patrulla then
+            d.recorrer.patrulla:ver(self.x, self.y, d.reloj)
+        end
     end
     -- Ruta.
     local p = d.ruta and d.ruta.puntos[d.indice]
-    if not p then
-        nuevoDestino(self, d)
+    if d.trabajoRuta then
+        -- Calculando la ruta nueva, por partes.
+        if trabajarRuta(self, d) then
+            rutaLista(self, d)
+        end
+    elseif not p then
+        if not d.sinRutaHasta or d.reloj >= d.sinRutaHasta then
+            nuevoDestino(self, d)
+        end
     else
         local llegada = p.final and 3 or 2.5
         if (p.x - self.x) ^ 2 + (p.y - self.y) ^ 2 < llegada * llegada then
@@ -1015,6 +1174,7 @@ function Robot:setAsalto(bando, x, y, nombre)
     d.bando = bando
     d.nombre = nombre or string.upper(bando)
     d.objetivo = { x, y }
+    d.trabajoRuta = nil
     planificar(self, d)
     if d.ruta then
         d.estado = 'avanzar'
@@ -1027,7 +1187,9 @@ end
 -- `opciones` (opcional): `dentro(x, y)` dice si un destino vale (p. ej.
 -- dentro del muro de una mina y fuera de sus edificios); `minimo` y
 -- `maximo`, los m entre un destino y el siguiente (si no, los de campo
--- abierto: Asalto.destinoMinimo y Asalto.destinoMaximo).
+-- abierto: Asalto.destinoMinimo y Asalto.destinoMaximo); `patrulla`, la
+-- patrulla que comparte con otros robots (batalla/robots/patrulla.lua): va
+-- a donde lleva más rato sin mirar nadie.
 function Robot:setRecorrer(bando, cx, cy, radio, nombre, opciones)
     local d = self.datos.asalto
     d.bando = bando
@@ -1041,6 +1203,7 @@ function Robot:setRecorrer(bando, cx, cy, radio, nombre, opciones)
         dentro = opciones.dentro,
         minimo = opciones.minimo,
         maximo = opciones.maximo,
+        patrulla = opciones.patrulla,
     }
     d.estado = 'avanzar'
     nuevoDestino(self, d)

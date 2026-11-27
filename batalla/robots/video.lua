@@ -91,6 +91,46 @@ function VideoRobots:camaraCamion(escena)
     self.cual = nil
 end
 
+VideoRobots.alturaOjos = 16.5 -- px (1,65 m)
+VideoRobots.suavidadOjos = 5 -- cuánto sigue la vista a la mirada por segundo
+
+--- La cámara en los ojos del robot `r`.
+function VideoRobots:camaraOjos(escena, r, dt)
+    local a = r.datos.asalto or {}
+    -- En metros del robot (y al norte): el rumbo del cuerpo más los giros.
+    local lado = r.rumbo + (a.torso or 0) + (a.cabeza or 0) + (a.ojoLado or 0)
+    local arriba = (a.cabezaArriba or 0) + (a.ojoArriba or 0)
+    local o = self.ojos
+    if not o then
+        o = { lado = lado, arriba = arriba }
+        self.ojos = o
+    end
+    local k = math.min(1, (dt or 1 / 30) * VideoRobots.suavidadOjos)
+    o.lado = o.lado + ((lado - o.lado + math.pi) % (2 * math.pi) - math.pi) * k
+    o.arriba = o.arriba + (arriba - o.arriba) * k
+    -- En el juego la y va al sur: el ángulo, al revés.
+    local g = -o.lado
+    local rx, ry, rz = r:getJuego()
+    local c = escena.camara
+    -- 25 cm por delante del centro de la cabeza (dentro de ella se vería
+    -- su propia chapa).
+    local ex, ey = rx + math.cos(g) * 2.5, ry + math.sin(g) * 2.5
+    local ez = rz + VideoRobots.alturaOjos
+    c.ojoFijo = c.ojoFijo or {}
+    c.ojoFijo[1], c.ojoFijo[2], c.ojoFijo[3] = ex, ey, ez
+    local lejos = 400
+    self.blanco = self.blanco or {}
+    local b = self.blanco
+    b.x = ex + math.cos(g) * math.cos(o.arriba) * lejos
+    b.y = ey + math.sin(g) * math.cos(o.arriba) * lejos
+    b.z = ez + math.sin(o.arriba) * lejos
+    b.getJuego = function()
+        return b.x, b.y, b.z, 0
+    end
+    c.robot = b
+    require('batalla.camara').robotDistancia = { 1, 9000 }
+end
+
 --- Pone la cámara (cada paso de la escena).
 function VideoRobots:camara(escena, dt)
     -- `BATALLA_CAMARA_PUNTO=x,y[,distancia]` (px): la cámara da la vuelta
@@ -207,6 +247,13 @@ function VideoRobots:camara(escena, dt)
     -- Un robot en prueba (escena.robotFoco): solo a él.
     if escena.robotFoco then
         robots = { escena.robotFoco }
+    end
+    -- `BATALLA_ROBOTS_CAMARA=ojos` (el dueño, 27-nov): lo que ve el robot, con
+    -- la cámara a la altura de sus ojos (1,65 m) y mirando adonde miran:
+    -- cuerpo, torso, cabeza y ojos (batalla/robots/mirada.lua). La vista va
+    -- algo suavizada: los ojos saltan muy deprisa y en vídeo marea.
+    if os.getenv('BATALLA_ROBOTS_CAMARA') == 'ojos' then
+        return self:camaraOjos(escena, robots[1], dt)
     end
     local t = self.cuadros / VideoRobots.fps
     local cual = math.floor(t / VideoRobots.turno) % #robots + 1
@@ -462,9 +509,14 @@ function VideoRobots:cuadro(escena)
             table.remove(self.fotos, 1)
             local ruta = string.format('%s/foto_%05.1f.png', self.carpeta, s)
             love.graphics.captureScreenshot(function(imagen)
-                local datos = imagen:encode('png')
+                -- Un error aquí dentro tumba LÖVE (se lanza dentro de
+                -- love.graphics.present): si no se puede guardar, solo avisa.
                 local f = io.open(ruta, 'wb')
-                f:write(datos:getString())
+                if not f then
+                    print('FOTO no se pudo guardar en ' .. ruta .. ' (¿existe la carpeta?)')
+                    return
+                end
+                f:write(imagen:encode('png'):getString())
                 f:close()
                 print('FOTO ' .. ruta)
             end)

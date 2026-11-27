@@ -19,6 +19,8 @@ local Carga = require('batalla.carga')
 local TexturaTerreno = require('batalla.dream.textura_terreno')
 local Fisica = require('batalla.fisica')
 local RobotsBatalla = require('batalla.robots.robot')
+local Patrulla = require('batalla.robots.patrulla')
+local Union = require('robots.union')
 local Mundo = require('batalla.robots.mundo')
 local VistaRobots = require('batalla.robots.vista')
 local Rayos = require('batalla.dream.rayos')
@@ -868,6 +870,12 @@ function EscenaDream.nueva(mundo, combate)
     self:ponerHora()
     self:precalentar()
     self:ponerRobots()
+    -- Las mallas fundidas de cada robot en todos sus niveles de detalle, ya
+    -- en la carga (robots/union.lua): fundirlas en plena batalla daba
+    -- tirones de hasta 1,1 s (27-nov).
+    for _, robot in ipairs(RobotsBatalla.getRobots()) do
+        Union.preparar(robot)
+    end
     self.segundosDream = love.timer.getTime() - inicio
     self.suelo.segundosBase = self.suelo.segundos
     self.suelo.segundos = self.segundosDream
@@ -1032,20 +1040,70 @@ function EscenaDream:ponerRobots()
     end
     local r = RobotsBatalla.crear('lanzamisilesCerebro', self.suelo, x, y, haciaEnemigo)
     r.datos.asalto.bando, r.datos.asalto.nombre = 'rojo', 'ROJO'
+    local guardias = {}
     if guardia then
         local rc = plano.recinto
         local cx, cy = (rc[1] + rc[3]) / 20, -(rc[2] + rc[4]) / 20
         local radio = math.sqrt((rc[3] - rc[1]) ^ 2 + (rc[4] - rc[2]) ^ 2) / 20
-        r:setRecorrer('rojo', cx, cy, radio, 'ROJO', {
-            minimo = 25,
-            maximo = 160,
-            dentro = function(mx, my)
-                local px, py = mx * 10, -my * 10
-                return px > rc[1] + 150 and px < rc[3] - 150 and py > rc[2] + 150 and py < rc[4] - 150
-                    and not self.suelo:ocupado(px, py, 60)
-            end,
-        })
-        print(string.format('GUARDIA: ROJO custodia la mina, recinto de %.0f x %.0f m', (rc[3] - rc[1]) / 10, (rc[4] - rc[2]) / 10))
+        local suelo = self.suelo
+        local function dentro(mx, my)
+            local px, py = mx * 10, -my * 10
+            return px > rc[1] + 150 and px < rc[3] - 150 and py > rc[2] + 150 and py < rc[4] - 150
+                and not suelo:ocupado(px, py, 60)
+        end
+        -- Varios robots que se reparten el recinto entero (el dueño,
+        -- 27-nov: «que cubran toda la zona»): cuántos, según lo que mide;
+        -- salen repartidos y cada uno va a donde lleva más rato sin
+        -- mirar nadie (batalla/robots/patrulla.lua).
+        local patrulla = Patrulla.nueva(rc[1] / 10, -rc[4] / 10, rc[3] / 10, -rc[2] / 10, function(mx, my)
+            return dentro(mx, my) and suelo:transitable(mx * 10, -my * 10)
+                and not suelo:plantaCerca(mx * 10, -my * 10, 25, true)
+        end)
+        self.patrulla = patrulla
+        local n = patrulla:robots()
+        local salidas = patrulla:salidas(n, r.x, r.y)
+        local opciones = { minimo = 25, maximo = 160, dentro = dentro, patrulla = patrulla }
+        -- `BATALLA_GUERRA=<n>` (pruebas de rendimiento): dos equipos de n
+        -- robots, soldados y lanzamisiles mezclados; los rojos salen de la
+        -- mitad sur del recinto y los azules de la norte, y cada equipo
+        -- patrulla el recinto entero, así que se encuentran y se disparan.
+        local guerra = tonumber(os.getenv('BATALLA_GUERRA') or '')
+        local equipos = { { bando = 'rojo', nombre = 'ROJO', patrulla = patrulla, opciones = opciones, salidas = salidas } }
+        if guerra then
+            local medio = -(rc[2] + rc[4]) / 20
+            local azul = Patrulla.nueva(rc[1] / 10, -rc[4] / 10, rc[3] / 10, -rc[2] / 10, function(mx, my)
+                return dentro(mx, my) and suelo:transitable(mx * 10, -my * 10)
+                    and not suelo:plantaCerca(mx * 10, -my * 10, 25, true)
+            end)
+            equipos[1].salidas = patrulla:salidas(guerra, r.x, r.y, function(c)
+                return c.y < medio
+            end)
+            equipos[2] = {
+                bando = 'azul', nombre = 'AZUL', patrulla = azul,
+                opciones = { minimo = 25, maximo = 160, dentro = dentro, patrulla = azul },
+                salidas = azul:salidas(guerra, r.x, -rc[2] / 10, function(c)
+                    return c.y > medio
+                end),
+            }
+        end
+        r:setRecorrer('rojo', cx, cy, radio, 'ROJO', opciones)
+        for _, equipo in ipairs(equipos) do
+            local primero = equipo.bando == 'rojo' and 2 or 1
+            for k = primero, #equipo.salidas do
+                local s = equipo.salidas[k]
+                local tipo = 'lanzamisilesCerebro'
+                if guerra and k % 2 == 0 then
+                    tipo = 'soldadoAsalto'
+                end
+                local o = RobotsBatalla.crear(tipo, suelo, s.x * 10, -s.y * 10, haciaEnemigo)
+                local nombre = equipo.nombre .. k
+                o.datos.asalto.bando, o.datos.asalto.nombre = equipo.bando, nombre
+                o:setRecorrer(equipo.bando, cx, cy, radio, nombre, equipo.opciones)
+                guardias[#guardias + 1] = o
+            end
+        end
+        print(string.format('GUARDIA: %d robots en la mina (%d equipos), recinto de %.0f x %.0f m, %d celdas de patrulla',
+            #guardias + 1, #equipos, (rc[3] - rc[1]) / 10, (rc[4] - rc[2]) / 10, #patrulla.celdas))
         -- Sin zonas de despliegue ni contador: aquí no hay tropas que
         -- colocar, y la guardia dura hasta salir con Esc.
         self.sinZonas = true
@@ -1059,6 +1117,11 @@ function EscenaDream:ponerRobots()
     r.idMemoria = 'ROJO'
     r.mapaMemoria = string.format('semilla%d_%d_%d', self.suelo.terreno.semilla or 0, math.floor(combate.cx / 1000), math.floor(combate.cy / 1000))
     self.robotsAsalto = { r }
+    for _, o in ipairs(guardias) do
+        o.idMemoria = o.datos.asalto.nombre
+        o.mapaMemoria = r.mapaMemoria
+        self.robotsAsalto[#self.robotsAsalto + 1] = o
+    end
     local blancos = (lejos or guardia) and {} or {
         { 40, math.rad(-30) },
         -- A un costado: solo lo ve al girar la cabeza hacia ese lado.

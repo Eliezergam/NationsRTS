@@ -211,13 +211,18 @@ local function loadPrimitive(node)
 		
 		if node.indices then
 			mesh.indices = cached(loadAccessor, file.accessors[node.indices + 1])
-			mesh.faces = lib:newDynamicBuffer()
-			for i = 0, mesh.indices:getSize() - 1, 3 do
-				mesh.faces:append({
-					mesh.indices:get(i + 1) + 1,
-					mesh.indices:get(i + 2) + 1,
-					mesh.indices:get(i + 3) + 1,
-				})
+			-- Nations RTS (27-nov): las caras en un búfer FFI, no una tabla
+			-- por triángulo. Eran 1,4 millones de tablas vivas que el
+			-- recolector de Lua recorría en cada vuelta (parones de 0,3 s).
+			-- Se leen igual: f.x, f.y, f.z con :get(i), :ipairs() y :getSize().
+			local cuantas = math.floor(mesh.indices:getSize() / 3)
+			mesh.faces = lib:newBuffer("vec3", "uint32_t", cuantas)
+			local caras = mesh.faces.buffer
+			for i = 0, cuantas - 1 do
+				local cara = caras[i]
+				cara.x = mesh.indices:get(i * 3 + 1) + 1
+				cara.y = mesh.indices:get(i * 3 + 2) + 1
+				cara.z = mesh.indices:get(i * 3 + 3) + 1
 			end
 		end
 		

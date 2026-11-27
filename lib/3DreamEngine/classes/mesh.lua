@@ -301,69 +301,74 @@ end
 
 local empty = { 0, 0 }
 function class:recalculateTangents()
-	self.tangents = lib:newBuffer("vec4", "float", self.vertices:getSize())
+	-- Nations RTS (27-nov): las mismas cuentas, sin crear tablas por
+	-- triángulo (eran 8 por cara: una malla de 78.000 vértices tardaba
+	-- 130 ms y dejaba 200.000 tablas de basura).
+	local tangents = lib:newBuffer("vec4", "float", self.vertices:getSize())
+	self.tangents = tangents
+	local tb = tangents.buffer
+	local vertices, texCoords = self.vertices, self.texCoords
 	
 	for _, f in self.faces:ipairs() do
+		local a, b, c = f.x, f.y, f.z
+		
 		--vertices
-		local v1 = self.vertices:get(f.x)
-		local v2 = self.vertices:get(f.y)
-		local v3 = self.vertices:get(f.z)
+		local v1 = vertices:get(a)
+		local v2 = vertices:get(b)
+		local v3 = vertices:get(c)
 		
 		--tex coords
-		local uv1 = self.texCoords:getOrDefault(f.x, empty)
-		local uv2 = self.texCoords:getOrDefault(f.y, empty)
-		local uv3 = self.texCoords:getOrDefault(f.z, empty)
+		local uv1 = texCoords:getOrDefault(a, empty)
+		local uv2 = texCoords:getOrDefault(b, empty)
+		local uv3 = texCoords:getOrDefault(c, empty)
 		
-		local tangent = { }
+		local e1x, e1y, e1z = v2.x - v1.x, v2.y - v1.y, v2.z - v1.z
+		local e2x, e2y, e2z = v3.x - v1.x, v3.y - v1.y, v3.z - v1.z
+		local e1u, e1v = uv2.x - uv1.x, uv2.y - uv1.y
+		local e2u, e2v = uv3.x - uv1.x, uv3.y - uv1.y
 		
-		local edge1 = { v2.x - v1.x, v2.y - v1.y, v2.z - v1.z }
-		local edge2 = { v3.x - v1.x, v3.y - v1.y, v3.z - v1.z }
-		local edge1uv = { uv2.x - uv1.x, uv2.y - uv1.y }
-		local edge2uv = { uv3.x - uv1.x, uv3.y - uv1.y }
-		
-		local cp = edge1uv[1] * edge2uv[2] - edge1uv[2] * edge2uv[1]
+		local cp = e1u * e2v - e1v * e2u
 		
 		if cp ~= 0.0 then
-			--handle clockwise-uvs
-			local clockwise = mat3(uv1.x, uv1.y, 1, uv2.x, uv2.y, 1, uv3.x, uv3.y, 1):det() > 0
+			--handle clockwise-uvs (determinant of the uv matrix)
+			local det = uv1.x * (uv2.y - uv3.y) - uv1.y * (uv2.x - uv3.x) + (uv2.x * uv3.y - uv2.y * uv3.x)
+			local w = det > 0 and 1 or 0
 			
-			tangent.x = (edge1[1] * edge2uv[2] - edge2[1] * edge1uv[2]) / cp
-			tangent.y = (edge1[2] * edge2uv[2] - edge2[2] * edge1uv[2]) / cp
-			tangent.z = (edge1[3] * edge2uv[2] - edge2[3] * edge1uv[2]) / cp
+			local tx = (e1x * e2v - e2x * e1v) / cp
+			local ty = (e1y * e2v - e2y * e1v) / cp
+			local tz = (e1z * e2v - e2z * e1v) / cp
 			
 			--sum up tangents to smooth across shared vertices
-			for _, key in ipairs({ "x", "y", "z" }) do
-				local t = self.tangents:get(f[key])
-				t.x = t.x + tangent.x
-				t.y = t.y + tangent.y
-				t.z = t.z + tangent.z
-				t.w = clockwise and 1 or 0
-			end
+			local t = tb[a - 1]
+			t.x, t.y, t.z, t.w = t.x + tx, t.y + ty, t.z + tz, w
+			t = tb[b - 1]
+			t.x, t.y, t.z, t.w = t.x + tx, t.y + ty, t.z + tz, w
+			t = tb[c - 1]
+			t.x, t.y, t.z, t.w = t.x + tx, t.y + ty, t.z + tz, w
 		end
 	end
 	
-	for i = 1, self.tangents:getSize() do
+	local normals = self.normals
+	for i = 1, tangents:getSize() do
 		--normalize
-		local t = self.tangents:get(i)
+		local t = tb[i - 1]
 		local l = math.sqrt(t.x ^ 2 + t.y ^ 2 + t.z ^ 2)
-		t.x = t.x / l
-		t.y = t.y / l
-		t.z = t.z / l
+		local x, y, z = t.x / l, t.y / l, t.z / l
 		
 		--complete smoothing step
-		local n = self.normals:get(i)
+		local n = normals:get(i)
 		
 		--Gram-Schmidt orthogonality
-		local dot = (t.x * n.x + t.y * n.y + t.z * n.z)
-		t.x = t.x - n.x * dot
-		t.y = t.y - n.y * dot
-		t.z = t.z - n.z * dot
+		local dot = (x * n.x + y * n.y + z * n.z)
+		x = x - n.x * dot
+		y = y - n.y * dot
+		z = z - n.z * dot
 		
 		--normalize
-		l = math.sqrt(t.x ^ 2 + t.y ^ 2 + t.z ^ 2)
-		t.x = t.x / l
-		t.y = t.y / l
-		t.z = t.z / l
+		l = math.sqrt(x ^ 2 + y ^ 2 + z ^ 2)
+		t.x = x / l
+		t.y = y / l
+		t.z = z / l
 	end
 end
 
@@ -473,7 +478,10 @@ function class:separate()
 		for _, face in self.faces:ipairs() do
 			local a = vertexHash(self.vertices:get(face.x))
 			if groupIndices[a] == group then
-				meshes[ID].faces:append(face)
+				-- Nations RTS (27-nov): copia los números; con caras en FFI
+				-- (loader/gltf.lua), `face` apunta dentro del búfer de esta
+				-- malla y quedaría colgando si se libera.
+				meshes[ID].faces:append({ face.x, face.y, face.z })
 			end
 		end
 	end

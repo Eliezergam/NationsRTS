@@ -23,6 +23,7 @@ local Mundo = require('batalla.robots.mundo')
 local Robot = Nucleo.Robot
 
 local Lanzador = {}
+local SIN_PIEZAS = {}
 
 Lanzador.datos = 'assets/batalla/robots/lanzamisiles_canon.lua'
 -- Lanza solo el proyectil (el dueño, 18-nov: «como la bala de un AK-47 pero
@@ -186,6 +187,7 @@ function Lanzador:onLoad()
     d.arriba, d.lado = 0, 0
     d.recarga, d.carga = 0, 0
     d.misiles, d.explosiones = {}, {}
+    d.puntosLibres = {}
     d.disparados, d.aciertos = 0, 0
     d.estado = 'cabeza'
     d.reloj = 0
@@ -327,12 +329,18 @@ local function moverMisiles(self, d, dt)
             m.estelaReloj = (m.estelaReloj or 0) - dt
             if m.estelaReloj <= 0 then
                 m.estelaReloj = 0.004
-                table.insert(m.estela, 1, { m.x - m.dx * 0.08, m.y - m.dy * 0.08, m.z - m.dz * 0.08, t = 0, gris = 0.72 + love.math.random() * 0.2 })
+                -- Los puntos de la estela se reutilizan (27-nov: uno nuevo
+                -- cada 4 ms y misil era basura para el recolector).
+                local punto = table.remove(d.puntosLibres) or {}
+                punto[1], punto[2], punto[3] = m.x - m.dx * 0.08, m.y - m.dy * 0.08, m.z - m.dz * 0.08
+                punto.t, punto.gris = 0, 0.72 + love.math.random() * 0.2
+                table.insert(m.estela, 1, punto)
             end
         end
         for n = #m.estela, 1, -1 do
             m.estela[n].t = m.estela[n].t + dt
             if m.estela[n].t > Lanzador.estela then
+                d.puntosLibres[#d.puntosLibres + 1] = m.estela[n]
                 m.estela[n] = nil
             end
         end
@@ -342,6 +350,7 @@ local function moverMisiles(self, d, dt)
         for n = #estela, 1, -1 do
             estela[n].t = estela[n].t + dt
             if estela[n].t > Lanzador.estela then
+                d.puntosLibres[#d.puntosLibres + 1] = estela[n]
                 estela[n] = nil
             end
         end
@@ -520,7 +529,12 @@ function Lanzador:onPose()
     local C = d.canon
     local f = d.forma
     local T = f * C.cambio
-    for _, p in ipairs(C.piezas) do
+    -- Las piezas del cañón solo se recolocan mientras cambia de forma: armado
+    -- o como cabeza se quedan como están (27-nov: cada cuadro creaba sus
+    -- posiciones, giros y matrices de nuevo, basura para el recolector).
+    local cambia = d.formaPuesta ~= f
+    d.formaPuesta = f
+    for _, p in ipairs(cambia and C.piezas or SIN_PIEZAS) do
         local pieza = self.piezas[p.nombre]
         if pieza then
             if f <= 0 then

@@ -166,6 +166,27 @@ local function construir(robot, nivel)
     return unido
 end
 
+--- Funde ya todos los niveles de detalle del robot, para que no se haga en
+-- mitad de la partida: la primera fusión de cada modelo y nivel tarda de 30
+-- ms a más de 1 s (27-nov, guerra de 40 robots: el soldado de cerca, 1.064
+-- ms, era un tirón de 1,1 s en plena batalla). La escena la llama al cargar,
+-- con los robots ya creados y puestos a punto.
+function Union.preparar(robot)
+    if not Union.activa then
+        return
+    end
+    robot.unidos = robot.unidos or {}
+    local niveles = { 0 }
+    for nivel in pairs(robot.lods or {}) do
+        niveles[#niveles + 1] = nivel
+    end
+    for _, nivel in ipairs(niveles) do
+        if robot.unidos[nivel] == nil then
+            robot.unidos[nivel] = construir(robot, nivel) or false
+        end
+    end
+end
+
 --- Escribe la matriz de cada pieza del robot (en 3Dream) y lo pide a 3Dream.
 -- false si este robot no se puede fundir (se dibuja pieza a pieza).
 function Union.dibujar(robot, nivel, aDream, ...)

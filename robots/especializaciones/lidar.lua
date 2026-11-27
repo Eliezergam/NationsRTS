@@ -49,7 +49,7 @@ Lidar.limites = nil
 
 function Lidar:onLoad()
     local d = self.datos.lidar
-    d.reloj = 0
+    d.reloj = self:getDesfase(self:getAjustes('lidar').periodo)
     d.rayos = {}
     d.visto = {}
     local L = self:getAjustes('lidar').limites
@@ -69,7 +69,11 @@ function Lidar:onUpdate(dt)
     end
 end
 
---- Un barrido entero: rayos, lo visto y el mapa.
+--- Un barrido entero: rayos, lo visto y el mapa. Las tablas de los rayos y
+-- de lo visto son siempre las mismas y se reescriben en cada barrido (27-nov:
+-- 144 tablas nuevas por robot y barrido eran 265 KB de basura por cuadro con
+-- 40 robots, y la basura trae los parones del recolector de Lua). Quien las
+-- lee copia lo que necesita en el momento.
 function Robot:barrer()
     local d = self.datos.lidar
     local L = self:getAjustes('lidar')
@@ -77,8 +81,16 @@ function Robot:barrer()
     local sensor = self.gestor.opciones.sensor
     local x = self.x + math.cos(self.rumbo) * L.adelante
     local y = self.y + math.sin(self.rumbo) * L.adelante
-    local rayos = {}
-    local visto = {}
+    local rayos = d.rayos
+    local n = 0
+    -- Lo visto del barrido anterior vuelve a la reserva.
+    local visto = d.visto
+    local libres = d.vistoLibres or {}
+    d.vistoLibres = libres
+    for tipo, v in pairs(visto) do
+        libres[#libres + 1] = v
+        visto[tipo] = nil
+    end
     local desfase = 0
     if L.alternar then
         d.vuelta = not d.vuelta
@@ -91,7 +103,13 @@ function Robot:barrer()
         for _, z in ipairs(L.capas) do
             local distancia, tipo, objeto = sensor(x, y, z, angulo, L.alcance, llevando)
             local choca = tipo ~= nil
-            rayos[#rayos + 1] = { angulo = angulo, distancia = distancia, choca = choca, tipo = tipo, objeto = objeto, z = z, x = x, y = y }
+            n = n + 1
+            local r = rayos[n]
+            if not r then
+                r = {}
+                rayos[n] = r
+            end
+            r.angulo, r.distancia, r.choca, r.tipo, r.objeto, r.z, r.x, r.y = angulo, distancia, choca, tipo, objeto, z, x, y
             if choca then
                 if objeto then
                     d.objetos = d.objetos or {}
@@ -102,7 +120,9 @@ function Robot:barrer()
                 end
                 local v = visto[tipo]
                 if not v then
-                    visto[tipo] = { distancia = distancia, angulo = angulo, veces = 1, objeto = objeto }
+                    v = table.remove(libres) or {}
+                    v.distancia, v.angulo, v.veces, v.objeto = distancia, angulo, 1, objeto
+                    visto[tipo] = v
                 else
                     v.veces = v.veces + 1
                     if distancia < v.distancia then
@@ -115,8 +135,9 @@ function Robot:barrer()
             d.mapa:setRayo(x, y, angulo, cerca or L.alcance, cerca ~= nil, tipoCerca)
         end
     end
-    d.rayos = rayos
-    d.visto = visto
+    for k = #rayos, n + 1, -1 do
+        rayos[k] = nil
+    end
 end
 
 --- Los objetos (muebles, cajas...) que ha tocado el lidar alguna vez:
@@ -138,11 +159,14 @@ function Robot:getMapa()
 end
 
 --- Lo más cerca que hay delante en un pasillo de `ancho` m (por los
--- rayos del último barrido); `alcance` si nada.
+-- rayos del último barrido); `alcance` si nada. En la batalla, el terreno
+-- (etiqueta `suelo`) no cuenta: una cuesta no es un obstáculo, la lleva la
+-- conducción.
 function Robot:getDistanciaDelante(ancho, capa)
     local mejor = self:getAjustes('lidar').alcance
     for _, r in ipairs(self.datos.lidar.rayos) do
-        if r.choca and (not capa or math.abs(r.z - capa) < 0.01) then
+        local esSuelo = type(r.tipo) == 'table' and r.tipo.suelo
+        if r.choca and not esSuelo and (not capa or math.abs(r.z - capa) < 0.01) then
             local a = r.angulo - self.rumbo
             local adelante = math.cos(a) * r.distancia
             local lado = math.abs(math.sin(a) * r.distancia)

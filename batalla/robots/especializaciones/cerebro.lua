@@ -55,7 +55,7 @@ end
 
 function Cerebro.onLoad(self)
     local c = self.datos.cerebro
-    c.reloj, c.verReloj = 0, 0
+    c.reloj, c.verReloj = 0, self:getDesfase(Cerebro.verCada)
     c.memoria = {}
 end
 
@@ -89,6 +89,9 @@ end
 -- la rama de su mapa.
 local function despertar(self, c, a)
     c.saber = Conocimiento.abrir(self.idMemoria or a.nombre or 'robot')
+    -- Cada robot guarda su memoria en un momento distinto (27-nov: los 40 de
+    -- una guerra la escribían en el mismo cuadro, parones de 100 ms).
+    c.saber.reloj = self:getDesfase(Conocimiento.guardarCada)
     c.rutaMapa = 'mundo/' .. (self.mapaMemoria or 'general')
     local yo = c.saber:rama('yo')
     yo.batallas = (yo.batallas or 0) + 1

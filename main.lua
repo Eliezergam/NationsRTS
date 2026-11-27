@@ -50,6 +50,7 @@ if jit then
 end
 
 local Mundo = require('mundo.mundo')
+local Recolector = require('batalla.recolector')
 local Simulacion = require('mundo.simulacion')
 local Ayudas = require('mundo.simulacion.ayudas')
 local Iso = require('mundo.iso')
@@ -2006,6 +2007,9 @@ local function escenaEjercito()
 end
 
 function love.update(dt)
+    -- El recolector de Lua, un poco cada cuadro y siempre en este momento
+    -- (batalla/recolector.lua).
+    Recolector.paso()
     if inicio.login then
         inicio.login:actualizar()
         if captura then

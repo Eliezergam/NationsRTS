@@ -11,6 +11,10 @@ return {
             giroMaximo = 2.6,
             aceleracionGiro = 7,
             agacharDesde = 3,
+            -- El freno ante lo que tiene delante mira la capa baja de su
+            -- lidar (0,4 m): la de 0,25 del robot del almacén no la tiene, y
+            -- sin ella nunca frenaba (27-nov).
+            capaParachoques = 0.4,
         },
         -- Patina para coger velocidad y se desliza con los pies juntos
         -- cuando ya va (robots/especializaciones/piernasSoldado.lua).

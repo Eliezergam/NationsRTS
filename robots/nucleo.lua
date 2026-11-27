@@ -251,10 +251,22 @@ function Gestor:crear(tipo, x, y, rumbo, extra)
         end
     end
     robot.actual = nil
+    -- Su número de orden en la escena (para repartir su trabajo periódico
+    -- entre los cuadros: Robot:getDesfase).
+    robot.numero = #self.lista + 1
     robot:llamar('onLoad')
     self.lista[#self.lista + 1] = robot
     robot:colocar()
     return robot
+end
+
+--- Desde dónde empieza a contar un reloj de `periodo` segundos de este robot:
+-- repartido entre 0 y `periodo` por su número (paso áureo), para que lo
+-- periódico de cada robot (barrer con el lidar, mirar, esquivar) no caiga en
+-- el mismo cuadro en todos. 27-nov: 40 robots creados a la vez barrían juntos
+-- (5.800 rayos en un cuadro, picos de 60 ms y luego cuadros vacíos).
+function Robot:getDesfase(periodo)
+    return ((self.numero or 0) * 0.6180339887498949) % 1 * periodo
 end
 
 --- Todos los robots de la escena.
@@ -272,6 +284,9 @@ end
 -- carga con la rampa subida, embarque.lua) ni se actualiza ni se dibuja: no
 -- se ve y no gasta. Quien lo guarda lo vuelve a sacar.
 function Gestor:actualizar(dt)
+    -- El número de cuadro: para repartir trabajo caro entre cuadros (rutas
+    -- nuevas: batalla/robots/especializaciones/asalto.lua).
+    self.cuadro = (self.cuadro or 0) + 1
     for _, r in ipairs(self.lista) do
         if not r.guardado then
             self:actualizarUno(r, dt)
