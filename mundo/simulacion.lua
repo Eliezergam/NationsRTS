@@ -3714,6 +3714,31 @@ function Simulacion:llegada(g)
         if not casa or casa.nacion ~= g.nacion then
             return self:volver(g)
         end
+        -- Recolectores que volvieron con el avión lleno: entregan y vuelven a
+        -- su mina con su avión, hasta que los retiren o se acabe la mina
+        -- (diseno/aviones-de-transporte.md).
+        local mina = g.ciclo and e.depositos[g.ciclo]
+        local tipoCarga = g.tipoCarga
+        if mina then
+            -- Entrega primero: sigue el ciclo solo si aún le falta ese recurso.
+            self:entregarCarga(g, casa)
+            if tipoCarga and (self:faltanRecursos(e.naciones[g.nacion], {})[tipoCarga] or 0) <= 0 then
+                mina = nil
+                g.ciclo = nil
+            end
+        end
+        if mina and not self:minaCerrada(mina) then
+            self:recibirHeridos(g, casa)
+            g.ciclo = nil
+            g.mision, g.fase, g.yacimiento = 'recolectar', 'ida', mina.id
+            g.carga = 0
+            self:reindexarGrupo(g)
+            g.destinoX, g.destinoY = mina.x, mina.y
+            g.ruta = { g.x, g.y, mina.x, mina.y }
+            g.largo = Simulacion.largoRuta(g.ruta)
+            g.recorrido, g.antesRecorrido = 0, 0
+            return
+        end
         casa.soldados = casa.soldados + g.soldados
         self:recibirHeridos(g, casa)
         self:devolverMunicion(g, casa)
@@ -4257,7 +4282,7 @@ function Simulacion:moverPaso()
                 candidatos[#candidatos + 1] = g
             end
             local espera = paso == 0 and not (g.batalla or g.detenido) and Simulacion.Aviones.vuela(g)
-            if espera and not g.vuelo then
+            if espera and not (g.vuelo and e.vuelos[g.vuelo]) then
                 esperan[#esperan + 1] = g
             end
             if paso > 0 or choca or espera then

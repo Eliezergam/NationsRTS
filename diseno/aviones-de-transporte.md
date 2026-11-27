@@ -27,7 +27,9 @@
 
 ## Decisiones del dueño (2026-11-26)
 
-8. **Flota**: cada capital empieza con **1 avión**; los demás se fabrican.
+8. **Flota**: cada capital empieza con **5 aviones** (al principio, 1;
+   cambiado el mismo día: «al principio el transporte no debería ser una
+   limitación»); los demás se fabrican.
    Si no hay avión libre, el envío **espera** su turno.
 9. **Todo vuela**: ejércitos, refuerzos, guarniciones, regresos, los
    recolectores (ida a la mina y vuelta con la carga) y los convoyes de obra.
@@ -69,11 +71,25 @@
   del color de su nación; sube y baja en el primer y último 12 % del viaje. Lo
   que vuela o espera avión ya no tiene ficha. Captura: `--captura ... avion`.
 
-Medido sin pantalla (semilla 2026, 60 días, 5 naciones): unos 10 grupos
-esperando avión en cada momento, sin atascarse. Ninguna nación llega a
-fabricar un 2.º avión (no junta 200 de dinero y 40 de metal), y el metal
-recolectado baja mucho frente a antes (las que tenían 167-190 de metal a los
-60 días tienen 16-51): un solo avión es un cuello de botella.
+- **El avión es de su grupo** (26-nov, el dueño: «ellos mismos llevan lo
+  recolectado a la ciudad... y así en todo»): se queda con él donde lo deja
+  ('esperar'); en un ataque espera en la ciudad propia más cercana
+  ('aparcar') y vuelve a recogerlo. Solo vuelve a su ciudad cuando el grupo
+  se deshace.
+- **Recolección en avión**: carga = 80 t por avión menos el peso de los
+  robots (1 unidad = 1 t); ritmo 0,5 por robot al día (antes 0,03), para que
+  15 robots llenen un avión en unos 10 días. Lleno, vuelve a la ciudad,
+  entrega y vuelve a la mina con su avión mientras a la nación le falte ese
+  recurso (y la mina no se cierre).
+- **5 aviones al empezar** (con 1 todo hacía fila y nadie llegaba a fabricar
+  el 2.º). La IA junta también lo que cuesta un avión cuando alguien suyo
+  espera, y no pasa de 10.
+
+Medido sin pantalla (semilla 2026, 90 días, 5 naciones): de 1 a 5 grupos
+esperando avión casi siempre, se fabrican aviones, hay batallas en minas y
+ciudades; dinero 101-3 597 y metal 34-302 a los 90 días. Determinista (dos
+veces la misma huella) y guardar a mitad con 18 aviones en el aire, cargar y
+seguir da lo mismo que no parar.
 
 ## Pasos (uno cada vez, enseñado y aprobado antes del siguiente)
 

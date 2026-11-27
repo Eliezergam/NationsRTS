@@ -54,6 +54,10 @@ function RecoleccionIA:faltanRecursos(n, enCamino)
         metal = math.max((consumo.metal or 0) * dias, Simulacion.consumo.reservaMetal + (plan.metal or 0)),
         petroleo = math.max((consumo.petroleo or 0) * dias, fijo * dias + (plan.petroleo or 0)),
     }
+    -- Con alguien esperando avión (aviones.lua), junta también lo que cuesta uno.
+    local avion = self:quiereAvion(n.id) and Simulacion.aviones.coste or {}
+    objetivo.metal = objetivo.metal + (avion.metal or 0)
+    objetivo.petroleo = objetivo.petroleo + (avion.petroleo or 0)
     local faltan = {}
     for _, r in ipairs({ 'metal', 'petroleo' }) do
         faltan[r] = math.min(objetivo[r], tope) - Simulacion.disponible(n, r) - (enCamino[r] or 0)
@@ -65,7 +69,7 @@ function RecoleccionIA:faltanRecursos(n, enCamino)
     end
     faltan.comida = capital and (math.min(Simulacion.granero(capital), come * dias) - (capital.comida or 0)) or 0
     faltan.comida = faltan.comida - (enCamino.comida or 0)
-    local minimo = 10 * Simulacion.recuperacion.reservaTesoro
+    local minimo = 10 * Simulacion.recuperacion.reservaTesoro + (avion.dinero or 0)
     faltan.oro = (minimo - Simulacion.disponible(n, 'dinero')) / Simulacion.yacimientos.precioOro - (enCamino.oro or 0)
     return faltan
 end
@@ -157,12 +161,13 @@ function RecoleccionIA:planearRecoleccion(n)
         return
     end
     local hostiles
-    local cargaSoldado = reglas.carga.soldados
+    -- Lo que llena un robot en unos 10 días (con los aviones, 26-nov).
+    local cargaSoldado = reglas.kRitmo * 10
     for _, tipo in ipairs({ 'comida', 'petroleo', 'metal', 'oro' }) do
         local falta = faltan[tipo]
         local descartadas = {}
         for _ = 1, 3 do
-            if falta < reglas.minimoGrupo * cargaSoldado then
+            if falta < 3 then
                 break
             end
             -- F10 sin la seguridad: la mina de más valor y su puesto más cercano.
@@ -196,7 +201,7 @@ function RecoleccionIA:planearRecoleccion(n)
                 break
             end
             local libre = libres[desdeK]
-            local soldados = math.min(libre.soldados, math.ceil(falta / cargaSoldado))
+            local soldados = math.min(libre.soldados, math.max(reglas.minimoGrupo, math.ceil(falta / cargaSoldado)))
             -- F10, seguridad: no manda a una mina con un ejército hostil más
             -- fuerte que el grupo a menos de un día (su poder, el que dicen
             -- sus informes; sin informe, a ciegas).

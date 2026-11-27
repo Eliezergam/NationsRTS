@@ -29,7 +29,9 @@ local Simulacion
 
 --- Reglas de la recolección (los números F1 a F12 del diseño).
 Recoleccion.reglas = {
-    kRitmo = 0.03, -- F1: unidades al día por punto de trabajo
+    -- F1: unidades al día por punto de trabajo. 26-nov (aviones): 0,03 -> 0,5,
+    -- para que 15 robots llenen un avión (unas 77 t) en unos 10 días.
+    kRitmo = 0.5,
     trabajo = { soldados = 1, lanzacohetes = 2 }, -- F1
     carga = { soldados = 0.3, lanzacohetes = 5 }, -- F2
     ventajaTerritorio = 1.25, -- F1: solo para los recolectores de la nación dueña de la celda
@@ -182,8 +184,8 @@ end
 
 --- Capacidad de carga de un grupo (F2): lo sano que lleva.
 function Recoleccion.capacidad(g)
-    local c = Simulacion.recoleccion.carga
-    return g.soldados * c.soldados + (g.lanzacohetes or 0) * c.lanzacohetes
+    -- Desde los aviones (26-nov): lo que cabe en sus aviones (1 unidad = 1 t).
+    return Simulacion.Aviones.capacidadCarga(g)
 end
 
 --- Entrega la carga de un grupo que llega a `casa` (3.1.8): metal y petróleo
@@ -309,6 +311,10 @@ function Recoleccion:recolectarDia()
                 for k, g in ipairs(grupos) do
                     -- Lleno, o sin nada sano que recolecte: a casa.
                     if g.carga >= Simulacion.capacidad(g) - 1e-9 or ritmos[k] <= 0 then
+                        -- Lleno: a entregar y, con su avión, otra vez aquí.
+                        if ritmos[k] > 0 then
+                            g.ciclo = id
+                        end
                         self:volver(g)
                     end
                 end

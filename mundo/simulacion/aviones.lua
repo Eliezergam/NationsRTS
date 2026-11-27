@@ -4,14 +4,19 @@
 -- Módulo de `mundo/simulacion.lua` (`Aviones.instalar(Simulacion)`). Solo
 -- datos y sin LÖVE, determinista como el resto de la simulación.
 --
---   * Cada nación empieza con 1 avión en su capital (`e.aviones`); los demás
+--   * Cada nación empieza con 5 aviones en su capital (el dueño, 26-nov: «al
+--     principio el transporte no debería ser una limitación»); los demás
 --     se fabrican en una ciudad (200 dinero, 40 metal, 10 petróleo, 15 días).
 --   * Un grupo con un viaje por delante (`g.ruta` sin acabar) ESPERA en su
 --     sitio hasta que le toca avión. Los grupos se atienden en orden de id.
---   * Un VUELO (`e.vuelos`) lleva un grupo: los aviones salen de su ciudad a
---     buscarlo ('buscar'), lo llevan en línea recta, cruzando el agua
---     ('llevar': el grupo anda a la velocidad del avión) y vuelven vacíos a su
---     ciudad ('volver'). Mientras vuelan no están libres.
+--   * Un VUELO (`e.vuelos`) es de su grupo hasta que el grupo se deshace
+--     (el dueño, 26-nov: «ellos mismos llevan lo recolectado a la ciudad... y
+--     así en todo»): los aviones salen de su ciudad a buscarlo ('buscar'), lo
+--     llevan en línea recta, cruzando el agua ('llevar': el grupo anda a la
+--     velocidad del avión) y se quedan con él ('esperar') donde lo dejan. En
+--     un ataque lo dejan y esperan en la ciudad propia más cercana
+--     ('aparcar'). Cuando el grupo vuelve a viajar lo llevan otra vez; cuando
+--     se deshace, vuelven a su ciudad ('volver').
 --   * La carga va en toneladas reales: 80 t por avión, un robot 150 kg, un
 --     camión de misiles 37 t. Un grupo más pesado sale en varios aviones; si
 --     no hay tantos, los que hay hacen varios viajes (el grupo tarda lo que
@@ -45,9 +50,10 @@ Aviones.reglas = {
     sinAvion = 60,
     coste = { dinero = 200, metal = 40, petroleo = 10 },
     dias = 15,
+    inicial = 5, -- aviones de cada nación al empezar, en su capital
     -- La IA no pasa de tantos aviones por nación (el jugador, igual mientras
     -- no tenga su menú para fabricarlos).
-    maximoIA = 6,
+    maximoIA = 10,
 }
 
 --- Toneladas que pesa el grupo `g` (sus tropas y sus heridos).
@@ -71,6 +77,12 @@ end
 --- ¿Va `g` en avión (tiene un viaje largo por delante)?
 function Aviones.vuela(g)
     return g.ruta ~= nil and (g.largo or 0) >= Aviones.reglas.sinAvion and (g.recorrido or 0) < g.largo
+end
+
+--- Lo que cabe de carga (unidades de recurso, 1 = 1 t) en los aviones que
+-- llevan a `g`: 80 t por avión menos lo que pesan sus tropas.
+function Aviones.capacidadCarga(g)
+    return math.max(0, Aviones.necesarios(g) * Aviones.reglas.carga - Aviones.peso(g))
 end
 
 --- Un avión nuevo de `nid` con base en la ciudad `cid`. Devuelve su id.
@@ -191,6 +203,23 @@ function Aviones:asignarAviones(esperan)
     end
 end
 
+--- Dónde espera el avión de un ejército que ataca: la ciudad propia más
+-- cercana a él (nil si no le queda ninguna).
+function Aviones:sitioDeEspera(nid, x, y)
+    local e = self.estado
+    local mejor, mejorD
+    for _, cid in ipairs(ordenadas(e.ciudades)) do
+        local c = e.ciudades[cid]
+        if c.nacion == nid then
+            local d = hipotenusa(c.x - x, c.y - y)
+            if not mejor or d < mejorD then
+                mejor, mejorD = c, d
+            end
+        end
+    end
+    return mejor
+end
+
 -- Vuelve vacío a su base desde donde está.
 local function aVolver(self, v)
     local e = self.estado
@@ -236,11 +265,52 @@ function Aviones:moverVuelos()
         elseif v.fase == 'llevar' then
             if g and g.vuelo == v.id and Aviones.vuela(g) and not g.batalla then
                 v.x, v.y = g.x, g.y
+            elseif g and g.vuelo == v.id then
+                -- Lo dejó donde iba: se queda con él; si ataca, espera en lo propio.
+                v.x, v.y = g.x, g.y
+                local espera = (g.mision == 'atacar' or g.mision == 'apoyo') and self:sitioDeEspera(g.nacion, g.x, g.y)
+                if espera then
+                    v.fase = 'aparcar'
+                    tramo(v, v.x, v.y, espera.x, espera.y)
+                else
+                    v.fase = 'esperar'
+                    -- En tierra, mirando hacia donde venía (para dibujarlo).
+                    local r = g.ruta
+                    if r then
+                        v.ox, v.oy, v.dx, v.dy = r[1], r[2], r[#r - 1], r[#r]
+                    end
+                    v.largo, v.recorrido = 1, 1
+                end
             else
                 if g then
                     v.x, v.y = g.x, g.y
                 end
                 aVolver(self, v)
+            end
+        elseif v.fase == 'aparcar' then
+            if not (g and g.vuelo == v.id) then
+                aVolver(self, v)
+            else
+                v.recorrido = math.min(v.largo, v.recorrido + paso)
+                local t = v.largo > 0 and v.recorrido / v.largo or 1
+                v.x, v.y = v.ox + (v.dx - v.ox) * t, v.oy + (v.dy - v.oy) * t
+                if v.recorrido >= v.largo then
+                    v.fase = 'esperar'
+                end
+            end
+        end
+        if v.fase == 'esperar' then
+            if not (g and g.vuelo == v.id) then
+                aVolver(self, v)
+            elseif Aviones.vuela(g) and not (g.batalla or g.detenido) then
+                -- Su grupo vuelve a viajar: lo va a buscar o, si está con él, lo lleva.
+                if hipotenusa(g.x - v.x, g.y - v.y) < Aviones.reglas.sinAvion then
+                    v.fase = 'llevar'
+                    self.activos = nil
+                else
+                    v.fase = 'buscar'
+                    tramo(v, v.x, v.y, g.x, g.y)
+                end
             end
         end
         if v.fase == 'volver' then
@@ -291,6 +361,29 @@ function Aviones:fabricarAvion(nid, cid)
     return true
 end
 
+--- ¿Le hace falta un avión más a `nid`? Alguien suyo espera avión, no tiene
+-- ninguno en obra y no pasa del máximo de la IA.
+function Aviones:quiereAvion(nid)
+    local e = self.estado
+    local espera = false
+    for _, g in ipairs(self:gruposDe(nid)) do
+        if Aviones.vuela(g) and not (g.vuelo and e.vuelos[g.vuelo]) then
+            espera = true
+            break
+        end
+    end
+    if not espera then
+        return false
+    end
+    for _, cid in ipairs(ordenadas(e.ciudades)) do
+        local c = e.ciudades[cid]
+        if c.nacion == nid and c.obraAviones then
+            return false
+        end
+    end
+    return self:avionesDe(nid).total < Aviones.reglas.maximoIA
+end
+
 --- Al terminar el día: avanzan las obras de aviones y la IA encarga los que
 -- le hacen falta (un grupo esperando avión y ninguno en obra).
 function Aviones:diaAviones()
@@ -312,39 +405,22 @@ function Aviones:diaAviones()
             c.obraAviones = #quedan > 0 and quedan or nil
         end
     end
-    -- Quién espera avión, por nación.
-    local esperan = {}
-    for _, gid in ipairs(ordenadas(e.grupos)) do
-        local g = e.grupos[gid]
-        if Aviones.vuela(g) and not g.vuelo then
-            esperan[g.nacion] = (esperan[g.nacion] or 0) + 1
-        end
-    end
     for _, n in ipairs(self:vivas()) do
-        if (esperan[n.id] or 0) > 0 then
-            local capital = e.ciudades[n.capital]
-            local enObra = false
-            for _, cid in ipairs(ordenadas(e.ciudades)) do
-                local c = e.ciudades[cid]
-                if c.nacion == n.id and c.obraAviones then
-                    enObra = true
-                end
-            end
-            local flota = self:avionesDe(n.id)
-            if capital and not enObra and flota.total < Aviones.reglas.maximoIA then
-                self:fabricarAvion(n.id, capital.id)
-            end
+        local capital = e.ciudades[n.capital]
+        if capital and self:quiereAvion(n.id) then
+            self:fabricarAvion(n.id, capital.id)
         end
     end
 end
 
---- Aviones de una nación nueva o de una partida de antes de los aviones: 1
--- en cada capital que no tenga ninguno.
+--- Los aviones de una nación nueva: `inicial` en su capital.
 function Aviones:avionInicial(nid)
     local e = self.estado
     local n = e.naciones[nid]
     if n and e.ciudades[n.capital] and self:avionesDe(nid).total == 0 then
-        self:nuevoAvion(nid, n.capital)
+        for _ = 1, Aviones.reglas.inicial do
+            self:nuevoAvion(nid, n.capital)
+        end
     end
 end
 
@@ -354,7 +430,7 @@ function Aviones.instalar(clase)
     clase.aviones = Aviones.reglas
     clase.Aviones = Aviones
     for nombre, f in pairs(Aviones) do
-        if type(f) == 'function' and nombre ~= 'instalar' and nombre ~= 'peso' and nombre ~= 'necesarios' and nombre ~= 'vuela' then
+        if type(f) == 'function' and nombre ~= 'instalar' and nombre ~= 'peso' and nombre ~= 'necesarios' and nombre ~= 'vuela' and nombre ~= 'capacidadCarga' then
             clase[nombre] = f
         end
     end
