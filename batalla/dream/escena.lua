@@ -1105,6 +1105,15 @@ function EscenaDream:ponerRobots()
         -- avión: él rueda sobre ella (MundoBatalla.superficies).
         self.pistaAvion = require('batalla.dream.pista_avion').nueva(dream, self.conversor, self.suelo, ax, ay, arumbo, medioLargo)
         require('batalla.robots.mundo').superficies = { self.pistaAvion }
+        -- La plataforma con la calle de rodaje y las plazas (solo con el
+        -- aeródromo del sitio): los aviones ruedan sobre ella.
+        if pista then
+            local P = require('batalla.sitios.plano').aerodromo.plataforma
+            local quitadasP = self.suelo:despejarFranja(ax, ay - (P.desde + P.hasta) / 2 * 10, arumbo, medioLargo * 10 + 200, (P.hasta - P.desde) / 2 * 10 + 80)
+            print(string.format('PLATAFORMA despejada, %d plantas quitadas', quitadasP))
+            self.plataformaAvion = require('batalla.dream.plataforma_avion').nueva(dream, self.conversor, self.suelo, pista)
+            table.insert(require('batalla.robots.mundo').superficies, self.plataformaAvion)
+        end
         -- Aparcado en el extremo oeste (de donde despega con toda la pista
         -- por delante), con la cola a 40 m del final.
         local atras = (medioLargo - 60) * 10
@@ -1128,13 +1137,14 @@ function EscenaDream:ponerRobots()
         -- El viaje de demostración (AVION_DEMO) y BATALLA_AVION=1, como antes:
         -- un avión aparcado con su pelotón.
         local demo = os.getenv('AVION_DEMO')
-        self.trafico = not demo and os.getenv('BATALLA_AVION') ~= '1'
-            and require('batalla.dream.trafico_aereo').nuevo(self, function(modo)
+        self.trafico = not demo and os.getenv('BATALLA_AVION') ~= '1' and self.plataformaAvion
+            and require('batalla.dream.trafico_aereo').nuevo(self, function(modo, plaza)
                 local avion = crearAvion()
                 if modo == 'llegada' then
+                    avion:setPlaza(plaza)
                     avion:setLlegada()
                 else
-                    avion:setRetenido()
+                    avion:setEstacionado(plaza)
                 end
                 return avion
             end)
@@ -1757,6 +1767,9 @@ function EscenaDream:dibujarEscena()
     dibujarSiExiste(self.dreamEdificio)
     if self.kitSitio then
         self.kitSitio:dibujar(ojoX, ojoY, ojoZ, miraX, miraY, miraZ)
+    end
+    if self.plataformaAvion then
+        self.plataformaAvion:dibujar()
     end
     if self.pistaAvion then
         self.pistaAvion:dibujar()

@@ -57,6 +57,7 @@ KitSitio.materiales = {
     kitCesped = 'baseCesped',
     kitBordillo = 'baseHormigon',
     kitLinea = 'baseHormigon',
+    kitLineaAmarilla = 'baseHormigon',
     kitGrava = 'baseHormigon',
 }
 
@@ -67,6 +68,7 @@ KitSitio.tonos = {
     kitNegro = { 0.12, 0.12, 0.12 },
     kitBordillo = { 0.8, 0.79, 0.76 },
     kitLinea = { 1.3, 1.3, 1.25 },
+    kitLineaAmarilla = { 1.35, 1.0, 0.2 }, -- las de rodaje de la plataforma
     kitGrava = { 0.62, 0.56, 0.46 },
     kitCesped = { 0.5, 0.68, 0.38 },
 }

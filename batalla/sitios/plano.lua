@@ -59,7 +59,10 @@ Plano.celda = 160 -- px de la rejilla de huellas (para `ocupado`)
 -- operan los aviones de carga militares: pista, plataforma y todo dentro del
 -- perímetro.
 Plano.aerodromo = {
-    fondo = 30, -- módulos (120 m)
+    -- 26-nov: de 30 a 72 módulos (288 m) para la plataforma de aparcamiento
+    -- de los aviones al norte de la pista (el dueño: «que no se pongan uno
+    -- encima del otro en la pista»).
+    fondo = 72, -- módulos (288 m)
     medioMuro = 100, -- módulos (400 m)
     ejeDesdeMuro = 750, -- px (75 m)
     medioLargo = 370, -- m de pista a cada lado del centro
@@ -70,6 +73,20 @@ Plano.aerodromo = {
     -- 1 de alto (con la curva suave, unos 30° en lo más empinado), como los
     -- desmontes de una carretera; nunca un paredón (el dueño, 20-nov).
     taludRelacion = 2.5,
+    -- Plataforma (m desde el eje de la pista, hacia el norte): la calle de
+    -- rodaje paralela a la pista y una fila de plazas donde los aviones
+    -- aparcan de morro al norte, separadas lo que mide el ala (72 m) y 18 m
+    -- más (batalla/dream/plataforma_avion.lua, trafico_aereo.lua).
+    plataforma = {
+        desde = 24, -- borde sur (pasado el arcén de la pista)
+        hasta = 205, -- borde norte
+        calle = 85, -- eje de la calle de rodaje
+        plaza = 165, -- centro de los aviones aparcados (cola a 132 m)
+        plazas = 8,
+        separacion = 90, -- m entre plazas
+        espera = -300, -- a lo largo: dónde esperan en la calle para entrar en la pista
+        entrada = -345, -- a lo largo: por dónde entran en la pista (cabecera oeste)
+    },
 }
 
 local M = Plano.modulo
@@ -629,6 +646,13 @@ function Plano:ponerPista(medioNorte)
     print(string.format('AERODROMO explanada: pendiente %.1f %%, desmonte o relleno de hasta %.1f m', pendiente * 100, hondo / 10))
     for a = -L, L - 400, 400 do
         s:explanarTramo(x + a, y, z0 + pendiente * a, x + a + 400, y, z0 + pendiente * (a + 400), A.medioAncho, A.talud, A.taludRelacion)
+    end
+    -- La plataforma, al norte (y menos en px), a la misma altura que la pista.
+    local P = A.plataforma
+    local centro = (P.desde + P.hasta) / 2 * 10
+    local medio = (P.hasta - P.desde) / 2 * 10 + 60
+    for a = -L, L - 400, 400 do
+        s:explanarTramo(x + a, y - centro, z0 + pendiente * a, x + a + 400, y - centro, z0 + pendiente * (a + 400), medio, A.talud, A.taludRelacion)
     end
     self.pista = {
         x = x,

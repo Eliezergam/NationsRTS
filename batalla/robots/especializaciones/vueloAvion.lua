@@ -206,6 +206,190 @@ function Robot:setLlegada()
     AvionVuelo.colocar(self, d)
 end
 
+-- Rodaje por la plataforma (el dueño, 26-nov: varios aviones en el mismo
+-- sitio, cada uno a su plaza). Como el tráfico de tierra de los simuladores
+-- de vuelo: en tierra y despacio el avión sigue un camino (rectas unidas por
+-- arcos) con la velocidad limitada en las curvas, sin la física del vuelo;
+-- hacia atrás, empujado (la salida de la plaza). Ejes de la plataforma: a a
+-- lo largo de la pista (al este) y l al norte, en m
+-- (batalla/sitios/plano.lua: Plano.aerodromo.plataforma).
+AvionVuelo.rodaje = {
+    velocidad = 8, -- m/s en recta
+    curva = 3, -- m/s como mucho en las curvas
+    lateral = 0.35, -- m/s² de aceleración lateral en las curvas
+    atras = 2.5, -- m/s empujado hacia atrás
+    acelera = 0.6, -- m/s²
+    frena = 0.7, -- m/s²
+    radio = 30, -- m de los arcos (como mucho)
+}
+
+local function base(d, a, l)
+    return d.px + d.ux * a - d.uy * l, d.py + d.uy * a + d.ux * l
+end
+
+local function enBase(d, x, y)
+    local dx, dy = x - d.px, y - d.py
+    return dx * d.ux + dy * d.uy, -dx * d.uy + dy * d.ux
+end
+
+--- Muestras cada metro del camino por `puntos` ({x, y} m), con las
+-- esquinas redondeadas: { x, y, rumbo, s (m recorridos), v (m/s máximos) }.
+local function hacerCamino(puntos)
+    local R = AvionVuelo.rodaje
+    -- Sin puntos repetidos.
+    local p = { puntos[1] }
+    for k = 2, #puntos do
+        local q = p[#p]
+        if (puntos[k][1] - q[1]) ^ 2 + (puntos[k][2] - q[2]) ^ 2 > 1 then
+            p[#p + 1] = puntos[k]
+        end
+    end
+    local muestras = {}
+    local function poner(x, y, v)
+        local ultima = muestras[#muestras]
+        if ultima and (x - ultima.x) ^ 2 + (y - ultima.y) ^ 2 < 1e-4 then
+            return
+        end
+        muestras[#muestras + 1] = { x = x, y = y, v = v }
+    end
+    local function recta(x0, y0, x1, y1)
+        local largo = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2)
+        local n = math.max(1, math.ceil(largo))
+        for k = 0, n do
+            poner(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n, R.velocidad)
+        end
+    end
+    local x, y = p[1][1], p[1][2]
+    for k = 2, #p - 1 do
+        local a, b, c = p[k - 1], p[k], p[k + 1]
+        local l1 = math.sqrt((b[1] - a[1]) ^ 2 + (b[2] - a[2]) ^ 2)
+        local l2 = math.sqrt((c[1] - b[1]) ^ 2 + (c[2] - b[2]) ^ 2)
+        local u1x, u1y = (b[1] - a[1]) / l1, (b[2] - a[2]) / l1
+        local u2x, u2y = (c[1] - b[1]) / l2, (c[2] - b[2]) / l2
+        local giro = math.atan2(u1x * u2y - u1y * u2x, u1x * u2x + u1y * u2y)
+        if math.abs(giro) < math.rad(1) then
+            recta(x, y, b[1], b[2])
+            x, y = b[1], b[2]
+        else
+            local tangente = math.min(R.radio * math.tan(math.abs(giro) / 2), 0.48 * l1, 0.48 * l2)
+            local radio = tangente / math.tan(math.abs(giro) / 2)
+            local t1x, t1y = b[1] - u1x * tangente, b[2] - u1y * tangente
+            recta(x, y, t1x, t1y)
+            -- Centro a la izquierda si gira a la izquierda.
+            local lado = giro > 0 and 1 or -1
+            local cx, cy = t1x - u1y * radio * lado, t1y + u1x * radio * lado
+            local a0 = math.atan2(t1y - cy, t1x - cx)
+            local n = math.max(2, math.ceil(radio * math.abs(giro)))
+            local v = math.min(R.curva, math.sqrt(R.lateral * radio))
+            for j = 1, n do
+                local ang = a0 + giro * j / n
+                poner(cx + math.cos(ang) * radio, cy + math.sin(ang) * radio, v)
+            end
+            x, y = b[1] + u2x * tangente, b[2] + u2y * tangente
+        end
+    end
+    recta(x, y, p[#p][1], p[#p][2])
+    -- Recorrido, rumbo y la velocidad para poder frenar a tiempo (y parar
+    -- al final).
+    local s = 0
+    for k, m in ipairs(muestras) do
+        if k > 1 then
+            s = s + math.sqrt((m.x - muestras[k - 1].x) ^ 2 + (m.y - muestras[k - 1].y) ^ 2)
+        end
+        m.s = s
+        local a, b = muestras[math.max(1, k - 1)], muestras[math.min(#muestras, k + 1)]
+        m.rumbo = math.atan2(b.y - a.y, b.x - a.x)
+    end
+    muestras[#muestras].v = 0
+    for k = #muestras - 1, 1, -1 do
+        local m, n = muestras[k], muestras[k + 1]
+        m.v = math.min(m.v, math.sqrt(n.v * n.v + 2 * R.frena * (n.s - m.s)))
+    end
+    return muestras
+end
+
+--- Empieza a rodar por `puntos` ({a, l} de la plataforma); al acabar, la
+-- fase `despues`. `atras`: empujado hacia atrás.
+local function rodar(d, puntos, despues, atras)
+    local xy = { { d.x, d.y } }
+    for _, q in ipairs(puntos) do
+        local x, y = base(d, q[1], q[2])
+        xy[#xy + 1] = { x, y }
+    end
+    local V = math.sqrt(d.vx * d.vx + d.vy * d.vy)
+    d.camino = { muestras = hacerCamino(xy), s = 0, v = atras and 0 or V, atras = atras, k = 1 }
+    d.fase, d.reloj, d.despues = atras and 'remolque' or 'rodaje', 0, despues
+    d.empuje, d.spoilers, d.freno = 0, 0, 0
+end
+
+--- Un paso por el camino: posición, rumbo y alto sobre el suelo.
+local function moverCamino(self, d, dt)
+    local c = d.camino
+    local m = c.muestras
+    while c.k < #m and m[c.k + 1].s <= c.s do
+        c.k = c.k + 1
+    end
+    local a, b = m[c.k], m[math.min(#m, c.k + 1)]
+    local tope = math.min(c.atras and AvionVuelo.rodaje.atras or math.huge, a.v)
+    if c.v < tope then
+        c.v = math.min(tope, c.v + AvionVuelo.rodaje.acelera * dt)
+    else
+        c.v = math.max(tope, c.v - 2 * AvionVuelo.rodaje.frena * dt)
+    end
+    c.s = math.min(m[#m].s, c.s + math.max(c.v, 0.05) * dt)
+    local t = b.s > a.s and math.min(1, (c.s - a.s) / (b.s - a.s)) or 1
+    d.x, d.y = a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t
+    local rumbo = a.rumbo + angulo(b.rumbo - a.rumbo) * t
+    d.rumbo = c.atras and angulo(rumbo + math.pi) or rumbo
+    local sentido = c.atras and -1 or 1
+    d.vx, d.vy, d.vz = math.cos(d.rumbo) * c.v * sentido, math.sin(d.rumbo) * c.v * sentido, 0
+    local cr, sr = math.cos(d.rumbo), math.sin(d.rumbo)
+    local z0 = alturaSuelo(d, d.x, d.y)
+    local z1 = alturaSuelo(d, d.x + cr * 19.5, d.y + sr * 19.5)
+    d.z, d.cabeceo, d.alabeo = z0, math.atan2(z1 - z0, 19.5), 0
+    d.quiereCabeceo, d.quiereAlabeo = d.cabeceo, 0
+    d.enTierra, d.alto = true, 0
+    return c.s >= m[#m].s - 1e-3
+end
+
+--- Plaza en la plataforma (a lo largo, m) donde aparcará al llegar.
+function Robot:setPlaza(a)
+    self.datos.vueloAvion.plaza = a
+end
+
+--- Ya aparcado en su plaza (a lo largo, m), de morro al norte, con la rampa
+-- abierta.
+function Robot:setEstacionado(a)
+    local d = self.datos.vueloAvion
+    local P = require('batalla.sitios.plano').aerodromo.plataforma
+    d.plaza = a
+    d.x, d.y = base(d, a, P.plaza)
+    d.rumbo = math.atan2(d.ux, -d.uy)
+    d.z = alturaSuelo(d, d.x, d.y)
+    d.vx, d.vy, d.vz = 0, 0, 0
+    d.cabeceo, d.alabeo = 0, 0
+    d.enTierra, d.embarcado, d.quedarse = true, true, true
+    d.fase, d.reloj = 'estacionado', 0
+    AvionVuelo.colocar(self, d)
+end
+
+--- Con la pista libre (trafico_aereo.lua): el que espera en la calle entra.
+function Robot:setPistaLibre()
+    self.datos.vueloAvion.pistaLibre = true
+end
+
+--- Fase del vuelo y si ocupa la pista (en el aire para tomar, en ella o
+-- entrando o saliendo de ella).
+function Robot:getVuelo()
+    local d = self.datos.vueloAvion
+    local _, l = enBase(d, d.x, d.y)
+    local f = d.fase
+    local pista = f == 'final' or f == 'toma' or f == 'frenada' or f == 'motor' or f == 'circuito'
+        or f == 'aparcado' or f == 'carreteo' or f == 'despegue' or (f == 'ascenso' and not d.salida)
+        or (f == 'rodaje' and math.abs(l) < 45)
+    return f, pista
+end
+
 -- Suelo bajo el avión: altura y cabeceo del terreno entre el tren de morro
 -- (19,5 m delante) y los principales (0 m).
 local function suelo(d)
@@ -376,11 +560,50 @@ local function pilotar(self, d, dt)
         d.empuje, d.freno, d.spoilers = -AvionVuelo.reversa, 1, 1
         d.quiereCabeceo = 0
         d.rumboSuelo = rumboPista(d) + math.pi + 0.004 * l
-        if V < 0.3 then
+        if d.plaza and V < 9 then
+            -- Sale de la pista hacia la calle de rodaje y su plaza.
+            local P = require('batalla.sitios.plano').aerodromo.plataforma
+            local a0 = enBase(d, d.x, d.y)
+            local hacia = (d.vx * d.ux + d.vy * d.uy) >= 0 and 1 or -1
+            local aSalida = a0 + hacia * 50
+            rodar(d, { { aSalida, 0 }, { aSalida, P.calle }, { d.plaza, P.calle }, { d.plaza, P.plaza } }, 'estacionado')
+        elseif V < 0.3 then
             d.vx, d.vy, d.vz = 0, 0, 0
             d.empuje = 0
             d.fase, d.reloj = 'rampa', 0
         end
+    elseif fase == 'rodaje' or fase == 'remolque' then
+        if moverCamino(self, d, dt) then
+            d.vx, d.vy = 0, 0
+            d.fase, d.reloj = d.despues, 0
+        end
+    elseif fase == 'estacionado' then
+        -- En su plaza, con la rampa abierta hasta que su vuelo se va.
+        d.empuje, d.freno = 0, 1
+        self:setCompuertas(d.salida and 0 or 1)
+        local ac = self.datos.avionCarga
+        if d.salida and ac.puertas == 0 and ac.rampa == 0 then
+            -- Empujado hacia atrás hasta la calle, con la cola al este.
+            local P = require('batalla.sitios.plano').aerodromo.plataforma
+            rodar(d, { { d.plaza, P.calle }, { d.plaza + 60, P.calle } }, 'calle', true)
+        end
+    elseif fase == 'calle' then
+        -- Por la calle hasta el punto de espera de la cabecera oeste.
+        local P = require('batalla.sitios.plano').aerodromo.plataforma
+        rodar(d, { { P.espera, P.calle } }, 'espera')
+    elseif fase == 'espera' then
+        d.empuje, d.freno = 0, 1
+        if d.pistaLibre then
+            local P = require('batalla.sitios.plano').aerodromo.plataforma
+            rodar(d, { { P.entrada, P.calle }, { P.entrada, 0 }, { P.entrada + 65, 0 } }, 'alineado')
+        end
+    elseif fase == 'alineado' then
+        -- En la pista, mirando al este: despega por el sentido +1.
+        d.sentido = 1
+        d.spoilers, d.punto = 0, 1
+        d.quedarse, d.retener, d.embarcado = false, false, true
+        d.vx, d.vy, d.vz = 0, 0, 0
+        d.fase, d.reloj = 'aparcado', AvionVuelo.esperaInicio - 2
     elseif fase == 'rampa' then
         d.empuje, d.freno = 0, 1
         self:setCompuertas(d.reloj < AvionVuelo.rampaAbierta and 1 or 0)
@@ -515,6 +738,11 @@ function AvionVuelo.onUpdate(self, dt)
         return
     end
     pilotar(self, d, dt)
+    local f = d.fase
+    if f == 'rodaje' or f == 'remolque' or f == 'estacionado' or f == 'calle' or f == 'espera' then
+        -- En la plataforma: lo mueve el camino, no la física.
+        d.acumulado = 0
+    end
     d.acumulado = math.min(d.acumulado + dt, 0.25)
     while d.acumulado >= AvionVuelo.paso do
         fisica(d, AvionVuelo.paso)
