@@ -888,6 +888,9 @@ function Mundo:dibujarAviones()
     local escala = Mundo.anchoAvion / cuadro * k
     local rumbos = avion.indice.rumbos
     local lista = {}
+    -- Vuelos parados en el mismo sitio (aparcados en una mina): uno al lado
+    -- del otro, no encima.
+    local enSitio = {}
     for _, id in ipairs(Simulacion.ordenadas(e.vuelos)) do
         local v = e.vuelos[id]
         local x, y, rumbo, t = self:posicionVuelo(v, fraccion)
@@ -896,7 +899,29 @@ function Mundo:dibujarAviones()
             -- Sube al salir y baja al llegar.
             local rampa = Mundo.rampaAvion
             local alto = math.max(0, math.min(1, t / rampa, (1 - t) / rampa))
-            lista[#lista + 1] = { v = v, vx = vx, vy = vy, rumbo = rumbo, alto = alto }
+            local paso = Mundo.anchoAvion * 0.8 * k
+            if alto <= 0 then
+                local clave = math.floor(vx / paso) .. ':' .. math.floor(vy / paso)
+                local n = enSitio[clave] or 0
+                enSitio[clave] = n + 1
+                vx = vx + n * paso * 1.15
+            end
+            -- Todos los aviones del vuelo, en formación sobre el suelo: el
+            -- primero delante y los demás detrás, alternando a cada lado.
+            local c, sn = math.cos(rumbo), math.sin(rumbo)
+            for i = 1, #v.aviones do
+                local fila = math.floor(i / 2)
+                local lado = (i % 2 == 0) and 1 or -1
+                local atras = fila * paso * 1.0
+                local costado = (i == 1) and 0 or lado * fila * paso * 1.4
+                local ox, oy = -c * atras - sn * costado, -sn * atras + c * costado
+                local dx, dy = Iso.vista(ox, oy, 0)
+                lista[#lista + 1] = {
+                    v = v, primero = i == 1, rumbo = rumbo, alto = alto,
+                    vx = vx + dx,
+                    vy = vy + dy,
+                }
+            end
         end
     end
     -- Las sombras primero (en el suelo), luego los aviones, de atrás adelante.
@@ -913,20 +938,16 @@ function Mundo:dibujarAviones()
         local sobre = a.vy - Mundo.alturaAvion * k * a.alto
         g.setColor(1, 1, 1, 1)
         g.draw(avion.hoja, a.cuadro, a.vx, sobre, 0, escala, escala, cuadro / 2, cuadro / 2)
-        -- Su nación: un disco de su color encima; con varios aviones, cuántos.
-        local n = e.naciones[a.v.nacion]
-        local color = n and n.color or { 0.8, 0.8, 0.8 }
-        local r = 6 * k
-        local cy = sobre - 30 * k
-        g.setColor(0.08, 0.08, 0.09, 0.9)
-        g.circle('fill', a.vx, cy, r + 2 * k)
-        g.setColor(color[1], color[2], color[3], 1)
-        g.circle('fill', a.vx, cy, r)
-        if #a.v.aviones > 1 then
-            g.setColor(1, 1, 1, 1)
-            local letra = Tema.fuente('sansNegrita', 13)
-            g.setFont(letra)
-            g.print('×' .. #a.v.aviones, a.vx + r + 4 * k, cy - letra:getHeight() * k / 2, 0, k, k)
+        -- Su nación: un disco de su color encima del primero del vuelo.
+        if a.primero then
+            local n = e.naciones[a.v.nacion]
+            local color = n and n.color or { 0.8, 0.8, 0.8 }
+            local r = 6 * k
+            local cy = sobre - 30 * k
+            g.setColor(0.08, 0.08, 0.09, 0.9)
+            g.circle('fill', a.vx, cy, r + 2 * k)
+            g.setColor(color[1], color[2], color[3], 1)
+            g.circle('fill', a.vx, cy, r)
         end
     end
     g.setColor(1, 1, 1, 1)
