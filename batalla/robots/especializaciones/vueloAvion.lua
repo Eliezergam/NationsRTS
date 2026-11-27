@@ -170,7 +170,15 @@ end
 --- Se va a otro sitio: tras despegar, sube en recta y deja la escena
 -- (fase `salida`). Sin circuito.
 function Robot:setSalida()
-    self.datos.vueloAvion.salida = true
+    local d = self.datos.vueloAvion
+    d.salida = true
+    d.retener = false
+end
+
+--- Aparcado en la pista hasta `setSalida` (el avión de un vuelo del mapa que
+-- espera en el sitio: batalla/dream/trafico_aereo.lua).
+function Robot:setRetenido()
+    self.datos.vueloAvion.retener = true
 end
 
 --- Llega de otro sitio: aparece en el aire en la final, a `llegadaDesde` m
@@ -253,7 +261,7 @@ local function pilotar(self, d, dt)
         -- Con pasajeros por subir (embarque.lua): rampa abajo y a esperar.
         if not d.embarcado and self.getEmbarquePendiente and self:getEmbarquePendiente() then
             d.fase, d.reloj = 'embarque', 0
-        elseif d.reloj > AvionVuelo.esperaInicio then
+        elseif d.reloj > AvionVuelo.esperaInicio and not d.retener then
             d.fase, d.reloj, d.inicioA = 'carreteo', 0, a
         end
     elseif fase == 'embarque' then
@@ -377,9 +385,19 @@ local function pilotar(self, d, dt)
         d.empuje, d.freno = 0, 1
         self:setCompuertas(d.reloj < AvionVuelo.rampaAbierta and 1 or 0)
         local ac = self.datos.avionCarga
-        -- Llegado de otro sitio: se queda con la rampa abierta.
-        if d.quedarse then
+        -- Llegado de otro sitio: se queda con la rampa abierta hasta que su
+        -- vuelo se va en el mapa (`setSalida`).
+        if d.quedarse and not d.salida then
             self:setCompuertas(1)
+        elseif d.quedarse and d.salida then
+            self:setCompuertas(0)
+            if ac.puertas == 0 and ac.rampa == 0 then
+                d.sentido = -d.sentido
+                d.spoilers = 0
+                d.punto = 1
+                d.quedarse = false
+                d.fase, d.reloj = 'aparcado', AvionVuelo.esperaInicio - 2
+            end
         elseif d.reloj > AvionVuelo.rampaAbierta and ac.puertas == 0 and ac.rampa == 0 then
             -- Ahora mira al otro lado: el próximo despegue va por ahí.
             d.sentido = -d.sentido
@@ -428,6 +446,7 @@ local function fisica(d, dt)
         local D = q * (P.cd0 + P.k * cl * cl + P.cdFlaps * d.flaps + 0.05 * (d.spoilers or 0))
         Fx, Fy, Fz = Fx - vx * D, Fy - vy * D, Fz - vz * D
         d.alfa = alfa
+        d.cl = cl -- para las estelas de las alas (batalla/dream/estelas_avion.lua)
     end
     local zSuelo, pendiente = suelo(d)
     if d.enTierra then

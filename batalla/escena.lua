@@ -117,6 +117,9 @@ function Escena.describir(mundo, fuerzas, objetivo, angulo)
             y = cy + ((fisica and fisica.y or objetivo.y) - cy) * escala,
             z = fisica and fisica.altura or mundo.terreno:altura(objetivo.x, objetivo.y),
             color = nacionD and nacionD.color or { 1, 1, 1 },
+            -- Dónde está en el mapa (los aviones que llegan: trafico_aereo.lua).
+            mapaX = objetivo.x,
+            mapaY = objetivo.y,
         },
     }
 end

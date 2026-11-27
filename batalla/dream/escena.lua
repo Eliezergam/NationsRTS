@@ -27,6 +27,7 @@ local VegetacionDream = require('batalla.dream.vegetacion')
 local Instancias = require('batalla.dream.instancias')
 local Visibilidad = require('batalla.dream.visibilidad')
 local EfectosDream = require('batalla.dream.efectos')
+local EstelasAvion = require('batalla.dream.estelas_avion')
 -- Estilo de la prueba de Camila (batalla/pruebas_estilo): texturas, pinos,
 -- rocas, matas, sombras por cascada y calidad (Valeria, batalla/dream/estilo).
 local Calidad = require('batalla.dream.calidad')
@@ -1108,43 +1109,66 @@ function EscenaDream:ponerRobots()
         -- por delante), con la cola a 40 m del final.
         local atras = (medioLargo - 60) * 10
         local cx, cy = ax - math.cos(arumbo) * atras, ay - math.sin(arumbo) * atras
-        self.avionCarga = RobotsBatalla.crear('avionCarga', self.suelo, cx, cy, arumbo)
-        self.avionCarga:setPista(ax / 10, -ay / 10, -arumbo, medioLargo)
-        print(string.format('AVION de carga en %.0f,%.0f px (BATALLA_CAMARA_PUNTO)', ax, ay))
-        -- Pelotón de 15 que sube y se sienta en la bodega en 3 filas de 5
-        -- (embarque.lua). Esperan formados en la pista, detrás del avión y
-        -- a un lado del eje (el camino a la rampa queda libre). Sin ellos:
-        -- BATALLA_EMBARQUE=0.
-        if os.getenv('BATALLA_EMBARQUE') ~= '0' then
-            local avion = self.avionCarga
-            local c, s = math.cos(avion.rumbo), math.sin(avion.rumbo)
-            local pasajeros = {}
-            for fila = 0, 2 do
-                for columna = 0, 4 do
-                    local lx, ly = -34 - fila * 2.2, 8 + columna * 1.5
-                    local xm, ym = avion.x + c * lx - s * ly, avion.y + s * lx + c * ly
-                    -- (Ejes del juego: px con y al sur y rumbo al revés.)
-                    pasajeros[#pasajeros + 1] = RobotsBatalla.crear('soldadoPasajero', self.suelo, xm * 10, -ym * 10, -avion.rumbo)
-                end
+        local function crearAvion()
+            local avion = RobotsBatalla.crear('avionCarga', self.suelo, cx, cy, arumbo)
+            avion:setPista(ax / 10, -ay / 10, -arumbo, medioLargo)
+            self.avionCarga = avion
+            print(string.format('AVION de carga en %.0f,%.0f px (BATALLA_CAMARA_PUNTO)', ax, ay))
+            -- `BATALLA_SEGUIR_AVION=1`: la cámara sigue al avión (su vuelo).
+            if os.getenv('BATALLA_SEGUIR_AVION') then
+                self.robotFoco = avion
+                self.robotSeguible = avion
+                require('batalla.camara').robotDistancia = { 15, 3000 }
+                self.camara:usarRobot(avion)
             end
-            -- `AVION_DEMO=salida|llegada` (tools/demo_avion.sh): ya van dentro.
-            avion:setPasajeros(pasajeros, os.getenv('AVION_DEMO') ~= nil)
+            return avion
         end
-        -- Viaje entre sitios (el dueño, 20-nov): `AVION_DEMO=salida` despega y
-        -- se va (deja la escena en la niebla); `llegada`, aparece en la final
-        -- fuera de la vista y aterriza.
+        -- Los aviones del mapa (el dueño, 26-nov): en un sitio de la partida
+        -- se ven los vuelos de la simulación que le tocan (trafico_aereo.lua).
+        -- El viaje de demostración (AVION_DEMO) y BATALLA_AVION=1, como antes:
+        -- un avión aparcado con su pelotón.
         local demo = os.getenv('AVION_DEMO')
-        if demo == 'salida' then
-            self.avionCarga:setSalida()
-        elseif demo == 'llegada' then
-            self.avionCarga:setLlegada()
-        end
-        -- `BATALLA_SEGUIR_AVION=1`: la cámara sigue al avión (su vuelo).
-        if os.getenv('BATALLA_SEGUIR_AVION') then
-            self.robotFoco = self.avionCarga
-            self.robotSeguible = self.avionCarga
-            require('batalla.camara').robotDistancia = { 15, 3000 }
-            self.camara:usarRobot(self.avionCarga)
+        self.trafico = not demo and os.getenv('BATALLA_AVION') ~= '1'
+            and require('batalla.dream.trafico_aereo').nuevo(self, function(modo)
+                local avion = crearAvion()
+                if modo == 'llegada' then
+                    avion:setLlegada()
+                else
+                    avion:setRetenido()
+                end
+                return avion
+            end)
+        if self.trafico then
+            self.trafico:empezar()
+        else
+            crearAvion()
+            -- Pelotón de 15 que sube y se sienta en la bodega en 3 filas de 5
+            -- (embarque.lua). Esperan formados en la pista, detrás del avión y
+            -- a un lado del eje (el camino a la rampa queda libre). Sin ellos:
+            -- BATALLA_EMBARQUE=0.
+            if os.getenv('BATALLA_EMBARQUE') ~= '0' then
+                local avion = self.avionCarga
+                local c, s = math.cos(avion.rumbo), math.sin(avion.rumbo)
+                local pasajeros = {}
+                for fila = 0, 2 do
+                    for columna = 0, 4 do
+                        local lx, ly = -34 - fila * 2.2, 8 + columna * 1.5
+                        local xm, ym = avion.x + c * lx - s * ly, avion.y + s * lx + c * ly
+                        -- (Ejes del juego: px con y al sur y rumbo al revés.)
+                        pasajeros[#pasajeros + 1] = RobotsBatalla.crear('soldadoPasajero', self.suelo, xm * 10, -ym * 10, -avion.rumbo)
+                    end
+                end
+                -- `AVION_DEMO=salida|llegada` (tools/demo_avion.sh): ya van dentro.
+                avion:setPasajeros(pasajeros, demo ~= nil)
+            end
+            -- Viaje entre sitios (el dueño, 20-nov): `AVION_DEMO=salida` despega y
+            -- se va (deja la escena en la niebla); `llegada`, aparece en la final
+            -- fuera de la vista y aterriza.
+            if demo == 'salida' then
+                self.avionCarga:setSalida()
+            elseif demo == 'llegada' then
+                self.avionCarga:setLlegada()
+            end
         end
     end
     -- Mundo físico de la batalla (batalla/robots/fisica.lua, Jolt), el que
@@ -1215,6 +1239,10 @@ function EscenaDream:actualizar(dt)
         end
     end
     self:ponerHora()
+    -- Los aviones del mapa que llegan o se van de este sitio.
+    if self.trafico then
+        self.trafico:actualizar(dt)
+    end
     if EscenaDream.medirRobots then
         EscenaDream.medirRobots:medir('logica', RobotsBatalla.actualizar, self.pausa and 0 or dt)
     else
@@ -1241,6 +1269,10 @@ function EscenaDream:actualizar(dt)
     end
     if self.efectos then
         self.efectos:actualizar(dt)
+    end
+    if self.avionCarga and self.efectos then
+        self.estelasAvion = self.estelasAvion or EstelasAvion.nuevas()
+        self.estelasAvion:actualizar(self.avionCarga, self.efectos, self.tropas.reloj)
     end
     if self.humoEscape then
         local ex, ey, ez = self.camara:puntosVista()
