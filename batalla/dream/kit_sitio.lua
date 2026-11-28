@@ -59,12 +59,14 @@ KitSitio.materiales = {
     kitLinea = 'baseHormigon',
     kitLineaAmarilla = 'baseHormigon',
     kitGrava = 'baseHormigon',
+    kitLosa = 'baseLosa', -- losas de 5 m con su junta (tools/texturas/losa_hormigon.sh)
 }
 
 -- Tono de cada material del kit sobre el de la biblioteca (el hormigón de
 -- la biblioteca, a pleno sol en losas grandes, se leía casi blanco).
 KitSitio.tonos = {
     kitHormigon = { 0.66, 0.64, 0.6 },
+    kitLosa = { 0.44, 0.43, 0.41 }, -- la plataforma, a pleno sol, se leía casi blanca
     kitNegro = { 0.12, 0.12, 0.12 },
     kitBordillo = { 0.8, 0.79, 0.76 },
     kitLinea = { 1.3, 1.3, 1.25 },
@@ -388,7 +390,7 @@ function KitSitio.nuevo(dream, conversor, plano)
     -- Cimientos: siempre (pocos triángulos), en una malla aparte.
     local base = nuevoLote()
     for _, c in ipairs(plano.cimientos) do
-        base:cajaGirada('kitHormigon', c.cx, c.cy, c.hx, c.hy, c.ang, c.z0, c.z1, 2.5)
+        base:cajaGirada(c.material or 'kitHormigon', c.cx, c.cy, c.hx, c.hy, c.ang, c.z0, c.z1, 2.5)
     end
     self.base = base:mallas(dream, self.cx, self.cy)
     -- Calles de la ciudad (batalla/dream/calles_malla.lua), por trozos.
@@ -437,7 +439,7 @@ function KitSitio.geometria(plano, nivel)
     local lote = nuevoLote()
     self:llenar(lote, plano.grupos, nivel)
     for _, c in ipairs(plano.cimientos) do
-        lote:cajaGirada('kitHormigon', c.cx, c.cy, c.hx, c.hy, c.ang, c.z0, c.z1, 2.5)
+        lote:cajaGirada(c.material or 'kitHormigon', c.cx, c.cy, c.hx, c.hy, c.ang, c.z0, c.z1, 2.5)
     end
     if plano.vias then
         for _, tr in pairs(require('batalla.dream.calles_malla').hacer(plano.vias)) do

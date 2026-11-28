@@ -186,6 +186,7 @@ local AUTOGUARDADO = 300
 local partidaLista = false
 local relojAutoguardado = 0
 local almacenAlEntrar -- `--almacen`: abre el juego dentro del almacén
+local sitioAlEntrar -- `--entrar [mina]`: abre el juego dentro de la capital (o de una mina suya)
 local almacenVideo -- `--almacen-video [salida.mp4]`: almacen/video_robot.lua
 local batallaVivo -- `--batalla-vivo`: { x, y, espera } hasta entrar en ella
 -- Modo `--jugador`: { jugador, rival, capitalJugador, capitalRival } (ids) de
@@ -771,6 +772,9 @@ function love.load(arg)
     -- del juego (las de la pantalla de inicio la abren: `login`, `loginPanel`
     -- y `loginSalir`).
     almacenAlEntrar = yaEsta['--almacen'] or yaEsta['--almacen-video']
+    if yaEsta['--entrar'] then
+        sitioAlEntrar = yaEsta['mina'] and 'mina' or 'ciudad'
+    end
     if yaEsta['--seguir'] then
         require('almacen.escena').seguirAlEntrar = true
     end
@@ -3136,7 +3140,32 @@ local function firmaPantalla()
     }, ' ')
 end
 
+-- `NATIONS_FOTOS=<segundos>`: guarda una foto de la ventana cada tantos
+-- segundos en <guardado>/fotos/ (para revisar el juego con el monitor
+-- apagado, cuando la captura del escritorio sale negra).
+local fotosCada = tonumber(os.getenv('NATIONS_FOTOS') or '')
+local relojFotos, numeroFoto = 0, 0
+
+local function fotoSiToca()
+    if not fotosCada then
+        return
+    end
+    relojFotos = relojFotos + love.timer.getDelta()
+    if relojFotos < fotosCada then
+        return
+    end
+    relojFotos = 0
+    numeroFoto = numeroFoto + 1
+    love.filesystem.createDirectory('fotos')
+    local archivo = string.format('fotos/foto%03d.png', numeroFoto)
+    love.graphics.captureScreenshot(function(imagen)
+        imagen:encode('png', archivo)
+        print('FOTO', love.filesystem.getSaveDirectory() .. '/' .. archivo)
+    end)
+end
+
 function love.draw()
+    fotoSiToca()
     if inicio.login then
         inicio.login:dibujar()
     elseif almacenVista then
@@ -3167,6 +3196,11 @@ function love.draw()
         almacenVideo:cuadro(almacenVista)
     end
     -- `--almacen`: en cuanto la partida está lista, entra como el botón.
+    if sitioAlEntrar and not carga and jugador and partidaLista then
+        local cual = sitioAlEntrar
+        sitioAlEntrar = nil
+        entrarSitioDelJugador(cual)
+    end
     if almacenAlEntrar and not carga and jugador then
         almacenAlEntrar = nil
         -- Partida de prueba del almacén: recursos para fabricar varios misiles
@@ -4077,6 +4111,32 @@ local function entrarEnSitio(objetivo)
         lado.soldados, lado.tanques, lado.lanzacohetes, lado.fuerza = 0, 0, 0, 0
     end
     entrarEnBatalla(combate)
+end
+
+--- `--entrar [mina]`: entra en la capital del jugador o, con `mina`, en el
+-- yacimiento suyo más cercano a ella.
+function entrarSitioDelJugador(cual)
+    local sim = mundo.sim
+    local nacion = sim:nacion(jugador.jugador)
+    local capital = nacion and sim:sitio(nacion.capital)
+    if not capital then
+        return
+    end
+    if cual ~= 'mina' then
+        entrarEnSitio(capital)
+        return
+    end
+    local mejor, mejorD
+    local r = 8000
+    for _, y in ipairs(sim:yacimientosEn(capital.x - r, capital.y - r, capital.x + r, capital.y + r)) do
+        if y.dueno == jugador.jugador then
+            local d = (y.x - capital.x) ^ 2 + (y.y - capital.y) ^ 2
+            if not mejorD or d < mejorD then
+                mejor, mejorD = y, d
+            end
+        end
+    end
+    entrarEnSitio(mejor or capital)
 end
 
 --- Abre el panel de exploración contra `objetivo` = { id, x, y, nombre }.

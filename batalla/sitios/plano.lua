@@ -471,28 +471,36 @@ end
 --- ¿Estorba (x, y) a la hierba y las flores? Edificios, patios, muro,
 -- calles y aceras.
 function Plano:estorbaPlanta(x, y)
-    return self:ocupado(x, y, 8) or (self.vias ~= nil and self.vias:sobre(x, y, 5))
+    return self:ocupado(x, y, 8) or (self.vias ~= nil and self.vias:sobre(x, y, 5)) or self:sobreAerodromo(x, y, 0, 0)
+end
+
+--- ¿Está (x, y) sobre el aeródromo: la pista con sus arcenes y la
+-- plataforma de los aviones al norte? `margen` px de más a lo largo y a lo
+-- ancho y `norte` px de más al norte de la plataforma. Sobre el hormigón
+-- no crece nada (27-nov: salían hierba y flores atravesando la plataforma).
+function Plano:sobreAerodromo(x, y, margen, norte)
+    local p = self.pista
+    if not p then
+        return false
+    end
+    local A = Plano.aerodromo
+    local largo = A.medioLargo * 10 + 300 + margen
+    local alNorte = A.plataforma.hasta * 10 + margen + norte
+    local alSur = A.medioAncho + margen
+    return math.abs(x - p.x) < largo and y > p.y - alNorte and y < p.y + alSur
 end
 
 --- ¿Estorba un árbol en (x, y) dentro del recinto? Edificios, patios y muro
--- (con 6 m de más), calles y aceras (4 m de más) y la franja del aeródromo:
+-- (con 10 m de más), calles y aceras (4 m de más) y la franja del aeródromo:
 -- la pista con su explanada y la plataforma de los aviones al norte. Lo
 -- demás del recinto lleva árboles como el campo (el dueño, 27-nov).
 function Plano:estorbaArbol(x, y)
-    if self:ocupado(x, y, 60) or (self.vias ~= nil and self.vias:sobre(x, y, 40)) then
+    -- 10 m de los edificios: la copa de un roble grande mide unos 9 m de
+    -- radio (con 6 m se metía por las fachadas y los tejados; 27-nov).
+    if self:ocupado(x, y, 100) or (self.vias ~= nil and self.vias:sobre(x, y, 40)) then
         return true
     end
-    local p = self.pista
-    if p then
-        local A = Plano.aerodromo
-        local largo = A.medioLargo * 10 + 600
-        local norte = A.plataforma.hasta * 10 + 150
-        local sur = A.medioAncho + A.talud
-        if math.abs(x - p.x) < largo and y > p.y - norte and y < p.y + sur then
-            return true
-        end
-    end
-    return false
+    return self:sobreAerodromo(x, y, Plano.aerodromo.talud, 150)
 end
 
 --- ¿Está (x, y) dentro del recinto del sitio (con `margen` px de más)?
@@ -649,6 +657,23 @@ function Plano:edificio(i0, j0, w, d, e)
             local px, py = self:nodo(i0 + i, j0 + j + 1)
             self:poner('techo', px, py, zt, ang)
         end
+    end
+    -- Forjados entre pisos: los muros miden 4,06 m y cada piso sube 4,3 m;
+    -- sin el canto del forjado quedaba una raja de 24 cm en cada piso por la
+    -- que se veía el cielo (el dueño, 27-nov). Una losa de acero del tamaño
+    -- de la planta, que por fuera se lee como el larguero entre módulos.
+    for k = 1, pisos - 1 do
+        local zk = z + k * Plano.piso
+        self.cimientos[#self.cimientos + 1] = {
+            cx = cx,
+            cy = cy,
+            hx = hx,
+            hy = hy,
+            ang = ang,
+            z0 = zk - (Plano.piso - Plano.altoMuro) - 1,
+            z1 = zk + 1,
+            material = 'kitAcero',
+        }
     end
     registro[6] = zt + 4 - z
     -- Sólido para la física (vehículos, robots, soldados y balas).

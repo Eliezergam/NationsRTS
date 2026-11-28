@@ -602,7 +602,12 @@ function EscenaDream.nueva(mundo, combate)
             Luz.oclusion.rebote.temporal = self.temporal
         end
         Tono.afilado = self.calidad.afilado or 0
-        TexturasPbr.nitidezMip = self.calidad.nitidezMip or 0
+        -- Sesgo de los mipmaps como manda AMD para FSR: log2(render /
+        -- pantalla), 0,38 niveles al 77 %. Con el nivel entero de antes el
+        -- hormigón lejano hacía rayas de colores y las hojas centelleaban
+        -- (el dueño, 27-nov). `nitidezMip` es el tope.
+        local escala = self.calidad.escalaRender or 1
+        TexturasPbr.nitidezMip = math.min(self.calidad.nitidezMip or 0, -math.log(escala) / math.log(2))
     else
         self.temporal = nil
         Tono.afilado = 0

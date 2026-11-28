@@ -18,7 +18,7 @@ PlataformaAvion.__index = PlataformaAvion
 
 PlataformaAvion.paso = 10 -- m de la rejilla
 PlataformaAvion.sobre = 0.3 -- m por encima del terreno explanado
-PlataformaAvion.repeticion = 6 -- m por repetición de la textura
+PlataformaAvion.repeticion = 5 -- m por repetición de la textura: una losa con su junta
 
 -- Datos de la malla: { x, y, z px, u, v } por vértice, 12 flotantes (los
 -- de kit_sitio y pista_avion).
@@ -109,7 +109,7 @@ function PlataformaAvion.nueva(dream, conversor, suelo, pista)
             self.z[i][j] = zmax + PlataformaAvion.sobre * 10
         end
     end
-    local porMaterial = { kitHormigon = {}, kitLineaAmarilla = {} }
+    local porMaterial = { kitLosa = {}, kitLineaAmarilla = {} }
     local R = PlataformaAvion.repeticion
     local function punto(a, l, dz)
         local x, y = px(a, l)
@@ -119,7 +119,7 @@ function PlataformaAvion.nueva(dream, conversor, suelo, pista)
     for i = 0, self.na - 1 do
         for j = 0, self.nl - 1 do
             local a, l = self.a0 + i * D, self.l0 + j * D
-            cuadro(porMaterial.kitHormigon, punto(a, l), punto(a + D, l), punto(a + D, l + D), punto(a, l + D))
+            cuadro(porMaterial.kitLosa, punto(a, l), punto(a + D, l), punto(a + D, l + D), punto(a, l + D))
         end
     end
     -- Líneas amarillas (15 cm de ancho a cada lado del eje), a trozos de

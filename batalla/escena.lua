@@ -463,6 +463,23 @@ function Escena:encuadrar(modo)
         end
         c.distancia = 2500
         c.inclinacion = math.rad(35)
+        -- `SITIO_CAMARA=adelante,derecha,distancia,inclinacion,giro` (m y
+        -- grados, desde donde se aparece y hacia donde se mira al entrar):
+        -- para revisar de cerca lo generado.
+        local fijada = os.getenv('SITIO_CAMARA')
+        if fijada then
+            local v = {}
+            for n in fijada:gmatch('[^,]+') do
+                v[#v + 1] = tonumber(n)
+            end
+            local fx, fy = -math.cos(c.rumbo), -math.sin(c.rumbo)
+            local adelante, derecha = (v[1] or 0) * 10, (v[2] or 0) * 10
+            c.x = c.x + fx * adelante - fy * derecha
+            c.y = c.y + fy * adelante + fx * derecha
+            c.distancia = (v[3] or 60) * 10
+            c.inclinacion = math.rad(v[4] or 25)
+            c.rumbo = c.rumbo + math.rad(v[5] or 0)
+        end
     end
 end
 
@@ -810,6 +827,29 @@ end
 
 --- Rótulo arriba a la izquierda: quién pelea, qué queda, la munición de cada
 -- bando y los controles.
+-- Nombre de cada yacimiento para el rótulo de la visita.
+local NOMBRE_MINA = { oro = 'Mina de oro', metal = 'Mina de metal', petroleo = 'Pozo de petróleo', comida = 'Granja' }
+
+--- Rótulo de la visita a una ciudad o una mina: su nombre, la altura de la
+-- cámara y los controles de la cámara libre.
+function Escena:dibujarRotuloVisita(alturaSuperficie)
+    local c = self.combate
+    local sitio = c.sitio or {}
+    local nombre
+    if sitio.deposito then
+        nombre = NOMBRE_MINA[sitio.deposito] or 'Mina'
+    else
+        nombre = c.defensor and c.defensor.nombre or 'Ciudad'
+    end
+    local lineas = {
+        { { nombre, 'amarillo' } },
+        { { string.format('De visita · el mundo sigue al 25 %% · cámara a %.0f m del suelo · FPS %d', alturaSuperficie, love.timer.getFPS()), 'textoHudTenue' } },
+        { { 'W/S hacia donde miras · A/D a los lados · rueda avanzar/retroceder · Espacio subir · Ctrl bajar · Shift x3', 'textoHudTenue' } },
+        { { 'Derecho (mantener) mirar · V a pie · Esc vuelve al mapa', 'textoHudTenue' } },
+    }
+    self:dibujarLineasRotulo(lineas)
+end
+
 function Escena:dibujarRotulo()
     local g = love.graphics
     local c = self.combate
@@ -818,6 +858,12 @@ function Escena:dibujarRotulo()
     local alturaSuperficie, altitudMar = self.camara:alturas()
     local function tenue(texto)
         return { { texto, 'textoHudTenue' } }
+    end
+    -- De visita (entrar a mirar desde el mapa) no hay pelea: el nombre del
+    -- sitio, sin bandos ni marcador (27-nov: salía «Ataca · Defiende ?»).
+    if c.visita then
+        self:dibujarRotuloVisita(alturaSuperficie)
+        return
     end
     local lineas = {
         tenue(
@@ -883,6 +929,14 @@ function Escena:dibujarRotulo()
             'W/S hacia donde miras · A/D a los lados · rueda avanzar/retroceder · Espacio subir · Ctrl bajar · Shift x3 · V a pie'
         )
     end
+    self:dibujarLineasRotulo(lineas)
+    self:dibujarFin()
+end
+
+--- El recuadro del rótulo, arriba a la izquierda: `lineas` es una lista de
+-- líneas y cada línea, de tramos { texto, color del tema }.
+function Escena:dibujarLineasRotulo(lineas)
+    local g = love.graphics
     local fuente = Tema.fuente('sans', 12)
     local relleno = Tema.px(8)
     local ancho = 0
@@ -910,7 +964,6 @@ function Escena:dibujarRotulo()
     end
     g.setColor(1, 1, 1, 1)
     self.altoRotulo = y + alto
-    self:dibujarFin()
 end
 
 --- Punto de pantalla de (x, y, z) con la cámara de la escena, o nil si
