@@ -76,7 +76,7 @@ end
 
 --- `pista` = { x, y, rumbo, medioLargo } (Plano:ponerPista; px y m).
 function PlataformaAvion.nueva(dream, conversor, suelo, pista)
-    if not dream.materialLibrary.baseHormigon then
+    if dream and not dream.materialLibrary.baseHormigon then
         BibliotecaPbr.cargar(dream, 'assets/base/materiales')
     end
     local P = Plano.aerodromo.plataforma
@@ -145,7 +145,12 @@ function PlataformaAvion.nueva(dream, conversor, suelo, pista)
     end
     -- De la calle a la cabecera de la pista.
     linea(P.entrada, P.calle, P.entrada, P.desde + 0.5)
-    self.mallas = mallas(dream, porMaterial, conversor.cx, conversor.cy)
+    -- Sin `dream` (la maqueta del mapa, mundo/maquetas.lua): solo los datos.
+    if dream then
+        self.mallas = mallas(dream, porMaterial, conversor.cx, conversor.cy)
+    else
+        self.porMaterial = porMaterial
+    end
     print(string.format('PLATAFORMA %d x %d m, %d plazas', 2 * L, P.hasta - P.desde, P.plazas))
     return self
 end

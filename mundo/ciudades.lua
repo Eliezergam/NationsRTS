@@ -519,6 +519,17 @@ function Ciudades:actualizar(ciudad, dt)
     ciudad.tiempo = (ciudad.tiempo or 0) + dt
 end
 
+--- El sitio de la ciudad para su maqueta (mundo/maquetas.lua): el mismo que
+-- se genera al entrar (todas las ciudades del mapa son capitales).
+function Ciudades.sitioMaqueta(ciudad)
+    local s = ciudad.sitioMaqueta
+    if not s then
+        s = { tipo = 'ciudad', capital = true, x = ciudad.x, y = ciudad.y }
+        ciudad.sitioMaqueta = s
+    end
+    return s
+end
+
 --- Lo que hay que dibujar de una ciudad, con su profundidad: la capital, su
 -- torre; las demás, su campamento. Al lado, los tanques y aviones que tenga
 -- (los vehículos se ven; la gente no).
@@ -528,6 +539,35 @@ function Ciudades:piezas(ciudad, lista)
     local datos = ciudad.datos or {}
     local x, y = ciudad.x, ciudad.y
     local borde
+    -- La maqueta del sitio 3D (mundo/maquetas.lua), cuando está hecha; mientras,
+    -- la torre de antes.
+    local maqueta = self.maquetas and self.maquetas:de(Ciudades.sitioMaqueta(ciudad))
+    if maqueta then
+        lista[#lista + 1] = {
+            profundidad = Iso.profundidad(x, y),
+            dibujar = function()
+                require('mundo.maquetas').dibujar(maqueta, x, y)
+                Ciudades.dibujarBandera(x, y, z, color)
+            end,
+        }
+        -- Sus aviones, aparcados en las plazas de la plataforma, al norte de
+        -- la pista (batalla/dream/plataforma_avion.lua).
+        local pista = maqueta.meta.pista
+        if pista then
+            local plazas = require('batalla.dream.plataforma_avion').plazas()
+            local P = require('batalla.sitios.plano').aerodromo.plataforma
+            for k = 1, math.min(datos.aviones or 0, #plazas) do
+                local ax, ay = x + pista.x + plazas[k], y + pista.y - P.plaza
+                lista[#lista + 1] = {
+                    profundidad = Iso.profundidad(ax, ay),
+                    dibujar = function()
+                        Ciudades.dibujarAvion(ax, ay, z, color)
+                    end,
+                }
+            end
+        end
+        return
+    end
     do
         -- Una torre en toda ciudad: la capital y las que se conquistan (que
         -- fueron capitales de otro país).

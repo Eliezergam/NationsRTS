@@ -427,6 +427,33 @@ function KitSitio.nuevo(dream, conversor, plano)
     return self
 end
 
+--- Geometría del sitio sin 3Dream, para su maqueta del mapa
+-- (mundo/maquetas.lua): los edificios en el nivel `nivel`, el muro (en una
+-- pieza por lado desde `muroUnaPiezaDesde`), los cimientos y las calles.
+-- Devuelve { [material] = { piezas = { { datos, x, y, z, giro } }, sueltos =
+-- { datos }, vertices } } (los datos, 12 números por vértice: m, y arriba).
+function KitSitio.geometria(plano, nivel)
+    local self = setmetatable({ plano = plano }, KitSitio)
+    local lote = nuevoLote()
+    self:llenar(lote, plano.grupos, nivel)
+    for _, c in ipairs(plano.cimientos) do
+        lote:cajaGirada('kitHormigon', c.cx, c.cy, c.hx, c.hy, c.ang, c.z0, c.z1, 2.5)
+    end
+    if plano.vias then
+        for _, tr in pairs(require('batalla.dream.calles_malla').hacer(plano.vias)) do
+            for material, datos in pairs(tr.datos) do
+                local l = lote:lista(material)
+                l.sueltos[#l.sueltos + 1] = datos
+                l.vertices = l.vertices + #datos / 12
+            end
+        end
+    end
+    return lote.porMaterial
+end
+
+--- Albedo de la chapa del color `k` (Plano.tonos), para la maqueta.
+KitSitio.texturaChapa = texturaChapa
+
 --- Añade al lote los grupos en el nivel `n`.
 function KitSitio:llenar(lote, grupos, n)
     for _, g in ipairs(grupos) do

@@ -22,6 +22,7 @@ local Terreno = require('mundo.terreno')
 local Ciudades = require('mundo.ciudades')
 local Recursos = require('mundo.recursos')
 local Plantas = require('mundo.plantas')
+local Plano = require('batalla.sitios.plano')
 
 local Generador = {}
 
@@ -47,17 +48,42 @@ function Generador.contexto(semilla)
     return { semilla = semilla, terreno = terreno, ciudades = ciudades, recursos = Recursos.nuevo(terreno, ciudades) }
 end
 
---- Filtro de plantas del trozo (tx, ty): el mismo que `Mundo:sinPlantas`.
+-- m de más alrededor del muro de cada recinto sin árboles en el mapa.
+Generador.margenRecinto = 30
+
+--- Recinto de un sitio en el mapa (x0, y0, x1, y1), con su margen.
+local function recinto(lista, x, y, tipo, capital, deposito)
+    local x0, y0, x1, y1 = Plano.recintoRelativo(tipo, capital, deposito)
+    local m = Generador.margenRecinto
+    lista[#lista + 1] = { x + x0 - m, y + y0 - m, x + x1 + m, y + y1 + m }
+end
+
+--- Filtro de plantas del trozo (tx, ty): el de `Mundo:sinPlantas` y, además,
+-- nada dentro del recinto de las ciudades y las minas (el dueño, 27-nov: con
+-- las maquetas del sitio 3D, mundo/maquetas.lua, los árboles del mapa
+-- quedaban dentro del muro, medio tapados por los edificios). Solo en el
+-- mapa: la batalla planta los suyos dentro (batalla/colocacion.lua).
 -- `obras` es una lista plana { x, y, r, x, y, r... } de instalaciones y
 -- huertos (lo único que no sale de la semilla).
 local function filtroPlantas(ctx, tx, ty, obras)
     local despejados = {}
+    local recintos = {}
     local cx, cy = (tx + 0.5) * LADO_TROZO, (ty + 0.5) * LADO_TROZO
     local rx0, ry0 = math.floor(cx / Recursos.region), math.floor(cy / Recursos.region)
     for dy = -1, 1 do
         for dx = -1, 1 do
             for _, d in ipairs(ctx.recursos:deRegion(rx0 + dx, ry0 + dy)) do
                 despejados[#despejados + 1] = { x = d.x, y = d.y, r = 170 }
+                recinto(recintos, d.x, d.y, 'mina', false, d.tipo)
+            end
+        end
+    end
+    local qx0, qy0 = math.floor(cx / Ciudades.region), math.floor(cy / Ciudades.region)
+    for dy = -1, 1 do
+        for dx = -1, 1 do
+            local ciudad = ctx.ciudades:deRegion(qx0 + dx, qy0 + dy)
+            if ciudad then
+                recinto(recintos, ciudad.x, ciudad.y, 'ciudad', true)
             end
         end
     end
@@ -71,6 +97,11 @@ local function filtroPlantas(ctx, tx, ty, obras)
     return function(x, y)
         for _, d in ipairs(despejados) do
             if (d.x - x) ^ 2 + (d.y - y) ^ 2 < d.r * d.r then
+                return true
+            end
+        end
+        for _, r in ipairs(recintos) do
+            if x > r[1] and x < r[3] and y > r[2] and y < r[4] then
                 return true
             end
         end

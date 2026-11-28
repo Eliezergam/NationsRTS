@@ -212,12 +212,36 @@ function Plano.nuevo(suelo, sitio)
     local A = Plano.aerodromo
     local huella = sitio.tipo == 'ciudad' and Llano.huellaCiudad or Llano.huellaMina
     local x, y = buscarLlano(suelo, sitio.x, sitio.y, math.max(mx, A.medioMuro * M), my, A.fondo * M, huella)
-    self.ox = math.floor(x / M + 0.5) * M
-    self.oy = math.floor(y / M + 0.5) * M
+    -- El sitio sale igual en cualquier batalla y en su maqueta del mapa
+    -- (mundo/maquetas.lua): la rejilla, alineada desde el sitio (no desde
+    -- el origen de la batalla, que cambia con el lado del ataque), y el
+    -- azar, de su punto del mapa.
+    self.ox = sitio.x + math.floor((x - sitio.x) / M + 0.5) * M
+    self.oy = sitio.y + math.floor((y - sitio.y) / M + 0.5) * M
     self:usarMarco(self.ox, self.oy, 0)
     local semilla = suelo.terreno.semilla or 1
-    self.U = Ruido.generador(Ruido.hash(semilla, math.floor(sitio.x), math.floor(sitio.y), 9311))
+    local sx, sy = sitio.mapaX or sitio.x, sitio.mapaY or sitio.y
+    self.U = Ruido.generador(Ruido.hash(semilla, math.floor(sx), math.floor(sy), 9311))
     return self
+end
+
+--- Rectángulo del recinto (el muro, con el aeródromo al norte) alrededor del
+-- punto del sitio, en m: x0, y0, x1, y1 (el norte es y menos). Es el del
+-- sitio cuando cabe en su punto del mapa (lo llano: mundo/llano.lua). El
+-- mapa 2D no planta árboles dentro (mundo/generador.lua).
+function Plano.recintoRelativo(tipo, capital, deposito)
+    local A = Plano.aerodromo
+    local mx, my
+    if tipo == 'ciudad' then
+        local t = capital and Plano.ciudades.capital or Plano.ciudades.ciudad
+        mx, my = t.medio, t.medio
+    else
+        local t = Plano.minas[deposito or 'oro'] or Plano.minas.oro
+        mx, my = t.medioX, t.medioY
+    end
+    local W = math.max(mx, A.medioMuro)
+    local m = M / 10 -- m por módulo
+    return -W * m, -(my + A.fondo) * m, W * m, my * m
 end
 
 --- Genera el plano del sitio (`sitio.tipo` 'ciudad' o 'mina', con

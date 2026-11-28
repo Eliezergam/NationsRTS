@@ -459,10 +459,23 @@ function Mundo:territorioAlDia(vista)
     return self:repintarTerritorio(x0 + m, y0 + m, x1 - m, y1 - m, vista, 40) == 0
 end
 
+--- Las maquetas de las ciudades y las minas (mundo/maquetas.lua): se crean
+-- al dibujarlas por primera vez.
+function Mundo:lasMaquetas()
+    if not self.maquetas then
+        self.maquetas = require('mundo.maquetas').nueva(self.semilla)
+        self.ciudades.maquetas = self.maquetas
+    end
+    return self.maquetas
+end
+
 --- Genera lo que falta cerca de la cámara, olvida lo lejano y avanza el tiempo.
 function Mundo:actualizar(dt, vista)
     local x0, y0, x1, y1 = cajaMundo(vista)
     self:generar(vista, nil, dt)
+    if self.maquetas then
+        self.maquetas:actualizar()
+    end
 
     -- El paso del tiempo: economía, obras, diplomacia y guerras.
     self.sim:actualizar(dt, self.velocidad)
@@ -740,15 +753,19 @@ function Mundo:dibujarObjetosCerca(lista, fundido)
             Instalaciones.dibujarHuerto(c.huerto, self.terreno:altura(c.huerto.x, c.huerto.y), self.sim.estado.dia)
         end
     end
-    -- La base de la torre de cada ciudad.
+    -- La base de la torre de cada ciudad (con su maqueta, no: la maqueta
+    -- lleva sus calles).
+    local maquetas = self:lasMaquetas()
     for _, ciudad in ipairs(self.activas) do
         ciudad.datos = self.sim:ciudad(ciudad.region)
         local nacion = ciudad.datos and self.sim:nacion(ciudad.datos.nacion)
         ciudad.color = nacion and nacion.color or { 0.8, 0.8, 0.8 }
         ciudad.esCapital = nacion and nacion.capital == ciudad.region
         self.ciudades:construir(ciudad)
-        g.setColor(1, 1, 1, 1)
-        g.draw(ciudad.suelo)
+        if not maquetas:de(Ciudades.sitioMaqueta(ciudad)) then
+            g.setColor(1, 1, 1, 1)
+            g.draw(ciudad.suelo)
+        end
     end
     g.setColor(1, 1, 1, 1)
     for _, c in ipairs(lista) do
@@ -1334,11 +1351,21 @@ function Mundo:piezasDepositos(piezas)
     table.sort(depositos, function(a, b)
         return a.id < b.id
     end)
+    -- Cada yacimiento, con la maqueta de su mina (el recinto que se ve al
+    -- entrar: mundo/maquetas.lua); mientras se hace, el dibujo de antes.
+    local maquetas = self:lasMaquetas()
+    local Maquetas = require('mundo.maquetas')
     for _, d in ipairs(depositos) do
+        d.sitioMaqueta = d.sitioMaqueta or { tipo = 'mina', deposito = d.tipo, x = d.x, y = d.y }
+        local maqueta = maquetas:de(d.sitioMaqueta)
         piezas[#piezas + 1] = {
             profundidad = Iso.profundidad(d.x, d.y),
             dibujar = function()
-                Recursos.dibujar(d, nil, self.tiempo or 0)
+                if maqueta then
+                    Maquetas.dibujar(maqueta, d.x, d.y)
+                else
+                    Recursos.dibujar(d, nil, self.tiempo or 0)
+                end
             end,
         }
     end

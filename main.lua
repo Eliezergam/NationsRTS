@@ -49,6 +49,10 @@ if jit then
     jit.opt.start('maxmcode=8192', 'maxtrace=8000')
 end
 
+-- El registro, línea a línea aunque vaya a un archivo (si no, sale todo al
+-- cerrar y no se ve a tiempo un error ni lo que tarda cada cosa).
+io.stdout:setvbuf('line')
+
 local Mundo = require('mundo.mundo')
 local Recolector = require('batalla.recolector')
 local Simulacion = require('mundo.simulacion')

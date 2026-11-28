@@ -99,7 +99,7 @@ end
 
 --- Pista centrada en (x, y) px con rumbo del juego `rumbo` (y al sur).
 function PistaAvion.nueva(dream, conversor, suelo, x, y, rumbo, medioLargo)
-    if not dream.materialLibrary.baseAsfalto then
+    if dream and not dream.materialLibrary.baseAsfalto then
         BibliotecaPbr.cargar(dream, 'assets/base/materiales')
     end
     local self = setmetatable({}, PistaAvion)
@@ -210,7 +210,12 @@ function PistaAvion.nueva(dream, conversor, suelo, x, y, rumbo, medioLargo)
             end
         end
     end
-    self.mallas = mallas(dream, porMaterial, conversor.cx, conversor.cy)
+    -- Sin `dream` (la maqueta del mapa, mundo/maquetas.lua): solo los datos.
+    if dream then
+        self.mallas = mallas(dream, porMaterial, conversor.cx, conversor.cy)
+    else
+        self.porMaterial = porMaterial
+    end
     return self
 end
 
