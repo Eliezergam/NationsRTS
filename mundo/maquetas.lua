@@ -295,7 +295,25 @@ end
 
 --- La maqueta lista de `sitio` = { tipo, capital, deposito, x, y }, o nil
 -- mientras se hace (la primera vez la pide, del disco o al hilo).
+-- Zoom semántico (el dueño, 28-nov: «de cerca más detalle y de lejos se va
+-- simplificando, como en Warpath»): por debajo de `zoomDetalle` no hay
+-- maqueta (la ciudad pinta su torre y la mina su icono) y no se hornea lo
+-- que no se ve; de `zoomDetalle` a `zoomPleno` la maqueta aparece fundida.
+Maquetas.zoomDetalle = 0.09
+Maquetas.zoomPleno = 0.12
+Maquetas.alfa = 1 -- el fundido de ahora (lo pone `Maquetas:ponerZoom`)
+
+--- El zoom del mapa de este cuadro.
+function Maquetas:ponerZoom(zoom)
+    self.zoom = zoom
+    local t = (zoom - Maquetas.zoomDetalle) / (Maquetas.zoomPleno - Maquetas.zoomDetalle)
+    Maquetas.alfa = math.max(0, math.min(1, t))
+end
+
 function Maquetas:de(sitio)
+    if self.zoom and self.zoom < Maquetas.zoomDetalle then
+        return nil
+    end
     local k = clave(sitio)
     local m = self.lista[k]
     if m == nil then
@@ -519,6 +537,7 @@ function Maquetas:hornear(r)
         escala = escala,
         pista = r.pista,
         recinto = r.recinto,
+        chimeneas = r.chimeneas,
     }
     if self.carpeta then
         self.pedidos:push({ guardar = self.carpeta .. '/' .. r.clave, imagen = datos, meta = Maquetas.serializar(meta) })
@@ -546,15 +565,27 @@ function Maquetas.serializar(t)
     return 'return ' .. valor(t) .. '\n'
 end
 
---- Dibuja la maqueta `m` del sitio en (x, y) del mapa (en la vista).
-function Maquetas.dibujar(m, x, y)
+-- Humo de las chimeneas en el mapa (mundo/ondear.lua): `fuerza` cuando no
+-- se dice otra (las ciudades; las minas, según si alguien recolecta).
+Maquetas.humoCiudad = 0.6
+
+--- Dibuja la maqueta `m` del sitio en (x, y) del mapa (en la vista), con el
+-- humo de sus chimeneas (`fuerza` de 0 a 1; sin ella, la de la ciudad).
+function Maquetas.dibujar(m, x, y, fuerza)
     local g = love.graphics
     local vx, vy = Iso.vista(x, y, 0)
     local meta = m.meta
+    local a = Maquetas.alfa
     g.setBlendMode('alpha', 'premultiplied')
-    g.setColor(1, 1, 1, 1)
+    g.setColor(a, a, a, a)
     g.draw(m.imagen, vx + meta.vx0, vy + meta.vy0, 0, 1 / meta.escala)
     g.setBlendMode('alpha')
+    local Ondear = require('mundo.ondear')
+    for k, c in ipairs(meta.chimeneas or {}) do
+        local cx, cy = x + c[1], y + c[2]
+        Ondear.columna(cx, cy, c[3], Ondear.fase(cx, cy) + k, fuerza or Maquetas.humoCiudad, a)
+    end
+    g.setColor(1, 1, 1, 1)
 end
 
 return Maquetas

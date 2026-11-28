@@ -602,7 +602,7 @@ function Plano:edificio(i0, j0, w, d, e)
     end
     self:abrirGrupo(huella[1], huella[2], huella[3], huella[4], z, tono)
     local pisos = e.patio and 1 or e.pisos
-    local registro = { huella[1], huella[2], huella[3], huella[4], z, 0, cx = cx, cy = cy, hx = hx, hy = hy, ang = ang, tono = tono }
+    local registro = { huella[1], huella[2], huella[3], huella[4], z, 0, cx = cx, cy = cy, hx = hx, hy = hy, ang = ang, tono = tono, nave = e.nave }
     -- Losas solo en los patios (una por celda: la pieza crece hacia el norte
     -- del marco desde su esquina suroeste). Los edificios, huecos.
     if e.patio then

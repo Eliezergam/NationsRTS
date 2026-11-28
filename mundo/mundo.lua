@@ -474,6 +474,7 @@ function Mundo:actualizar(dt, vista)
     local x0, y0, x1, y1 = cajaMundo(vista)
     self:generar(vista, nil, dt)
     if self.maquetas then
+        self.maquetas:ponerZoom(self.zoom or 1)
         self.maquetas:actualizar()
     end
 
@@ -1221,6 +1222,21 @@ function Mundo:dibujarNombres()
     g.setFont(anterior)
 end
 
+--- ¿Recolecta alguien ahora en el yacimiento `d`? (para su humo). Se mira
+-- una vez por día de juego.
+function Mundo:minaTrabajando(d)
+    local dia = self.sim.estado.dia
+    if self.diaTrabajo ~= dia then
+        self.diaTrabajo, self.trabajando = dia, {}
+        for _, g in pairs(self.sim.estado.grupos or {}) do
+            if g.mision == 'recolectar' and g.fase == 'recolectando' and g.yacimiento then
+                self.trabajando[g.yacimiento] = true
+            end
+        end
+    end
+    return d.id ~= nil and self.trabajando[d.id] == true
+end
+
 --- Iconos de los yacimientos explorados (3.8): gota, pico, pepita o espiga,
 -- del mismo tamaño en pantalla a cualquier zoom, con el aro del color de su
 -- dueño (gris si es de nadie) y un fondo más claro si son tuyos. Encima, lo
@@ -1399,7 +1415,8 @@ function Mundo:piezasDepositos(piezas)
             profundidad = Iso.profundidad(d.x, d.y),
             dibujar = function()
                 if maqueta then
-                    Maquetas.dibujar(maqueta, d.x, d.y)
+                    -- Más humo si alguien está recolectando en ella.
+                    Maquetas.dibujar(maqueta, d.x, d.y, self:minaTrabajando(d) and 1 or 0.2)
                 else
                     Recursos.dibujar(d, nil, self.tiempo or 0)
                 end

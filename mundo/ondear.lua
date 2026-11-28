@@ -139,4 +139,56 @@ function Ondear.humo(x, y, escala, fase, fuerza)
     end
 end
 
+-- Viento del mapa: el mismo para todo el humo (y lo que se mueva con él),
+-- de dirección que gira muy despacio y con rachas.
+Ondear.rumboViento = 0.7 -- rad en el mundo (x al este, y al sur)
+
+--- Dirección del viento (vector unidad en el mundo) y su fuerza (0,6 a 1,4).
+function Ondear.viento()
+    local t = Ondear.ahora()
+    local a = Ondear.rumboViento + 0.35 * math.sin(t * 0.013)
+    local fuerza = 1 + 0.25 * math.sin(t * 0.21) + 0.15 * math.sin(t * 0.57 + 1.3)
+    return math.cos(a), math.sin(a), fuerza
+end
+
+-- Columna de humo de chimenea (el dueño, 28-nov: «que el mapa no se sienta
+-- estático»): bocanadas que suben, crecen, se las lleva el viento y se
+-- deshacen. En m del mapa (x, y, z de la boca), así sale a escala y bien
+-- puesta con la proyección; cada bocanada con su lado al sol más claro.
+Ondear.humoAlto = 200 -- m que sube antes de deshacerse (de lejos se tiene que leer)
+Ondear.humoDeriva = 320 -- m que se la lleva el viento en ese tiempo
+Ondear.humoRadio = { 10, 70 } -- m de radio al salir y al deshacerse
+Ondear.humoBocanadas = 12
+
+--- Columna de humo en (x, y, z) m del mapa. `fuerza` de 0 (casi nada) a 1
+-- (fábrica a pleno); `fase` para que no salgan todas a la vez; `alfa`, el
+-- fundido del zoom.
+function Ondear.columna(x, y, z, fase, fuerza, alfa)
+    local Iso = require('mundo.iso')
+    local g = love.graphics
+    local t = Ondear.ahora()
+    local wx, wy, rafaga = Ondear.viento()
+    local n = Ondear.humoBocanadas
+    local r0, r1 = Ondear.humoRadio[1], Ondear.humoRadio[2]
+    local densidad = (0.25 + 0.35 * fuerza) * (alfa or 1)
+    -- De la más vieja (arriba, detrás) a la más nueva (abajo, delante).
+    for k = n - 1, 0, -1 do
+        local edad = (t * 0.07 + k / n + fase / DOS_PI) % 1
+        local sube = Ondear.humoAlto * math.sqrt(edad)
+        local lleva = Ondear.humoDeriva * edad * edad * rafaga
+        local ondula = math.sin(t * 0.5 + k * 1.7 + fase) * 6 * edad
+        local px = x + wx * lleva - wy * ondula
+        local py = y + wy * lleva + wx * ondula
+        local vx, vy = Iso.vista(px, py, z + sube)
+        local radio = r0 + (r1 - r0) * edad
+        -- Aparece rápido y se deshace despacio.
+        local alfa = math.min(1, edad * 8) * (1 - edad) ^ 1.4 * densidad
+        -- Sombra abajo a la derecha (el sol viene del noroeste) y luz arriba.
+        g.setColor(0.52, 0.53, 0.55, alfa)
+        g.circle('fill', vx + radio * 0.18, vy + radio * 0.14, radio, 20)
+        g.setColor(0.86, 0.86, 0.85, alfa * 0.9)
+        g.circle('fill', vx - radio * 0.12, vy - radio * 0.12, radio * 0.82, 20)
+    end
+end
+
 return Ondear

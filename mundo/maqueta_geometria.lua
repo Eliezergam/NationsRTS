@@ -184,6 +184,47 @@ end
 
 local contexto
 
+
+-- Dónde sale humo en el mapa (mundo/ondear.lua, Ondear.columna): de las
+-- naves (la planta de la mina, los talleres) y, en la ciudad, también de
+-- las azoteas de sus edificios más grandes, como sus fábricas.
+MaquetaGeometria.maximoChimeneas = 6
+
+--- Puntos de humo del plano: { { x, y, z } } en m desde el sitio (x, y), z
+-- en lo alto del edificio.
+function MaquetaGeometria.chimeneas(plano, x, y)
+    local naves, otros = {}, {}
+    for _, e in ipairs(plano.edificios) do
+        if not e.patio and e.cx then
+            local area = (e.hx or 0) * (e.hy or 0)
+            local punto = { x = (e.cx - x) * 0.1, y = (e.cy - y) * 0.1, z = (e[5] + e[6]) * 0.1, area = area }
+            if e.nave then
+                naves[#naves + 1] = punto
+            else
+                otros[#otros + 1] = punto
+            end
+        end
+    end
+    local function mayores(a, b)
+        return a.area > b.area
+    end
+    table.sort(naves, mayores)
+    table.sort(otros, mayores)
+    local lista = {}
+    for _, p in ipairs(naves) do
+        if #lista < MaquetaGeometria.maximoChimeneas then
+            lista[#lista + 1] = { p.x, p.y, p.z }
+        end
+    end
+    -- La ciudad: sus edificios grandes, hasta tener tres como poco.
+    for _, p in ipairs(otros) do
+        if #lista < 3 then
+            lista[#lista + 1] = { p.x, p.y, p.z }
+        end
+    end
+    return lista
+end
+
 --- Geometría de la maqueta de `sitio` = { tipo = 'ciudad' | 'mina', capital,
 -- deposito, x, y } (punto del mapa) en el mundo de `semilla`.
 function MaquetaGeometria.hacer(semilla, sitio)
@@ -258,6 +299,7 @@ function MaquetaGeometria.hacer(semilla, sitio)
         piezas = plano.cantidad,
         edificios = #plano.edificios,
     }
+    resultado.chimeneas = MaquetaGeometria.chimeneas(plano, x, y)
     if pista then
         resultado.pista = {
             x = (pista.x - x) * 0.1,
