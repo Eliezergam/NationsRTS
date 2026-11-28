@@ -5275,9 +5275,15 @@ function love.keypressed(tecla)
         local cx, cy = Iso.mundo(camara.x, camara.y)
         entrarEnBatalla(Escena.buscarCombate(mundo, cx, cy))
     elseif tecla == 'p' then
-        if not vistaLejana then
-            alternarPlantar()
+        -- En la vista lejana no se planta (el clic solo mueve la cámara): se
+        -- acerca la cámara a donde se mira y se entra en el modo (el dueño,
+        -- 28-nov: «no puedo plantar banderas»; antes no hacía nada).
+        if vistaLejana and not plantando then
+            camara.zoom = ZOOM_SALE_LEJOS + 0.02
+            camara.zoomObjetivo = camara.zoom
+            vistaLejana = false
         end
+        alternarPlantar()
     elseif tecla == 'n' then
         empezar(love.math.random(1, 99999))
     elseif tecla == 'v' then

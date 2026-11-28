@@ -31,6 +31,8 @@ local MOTIVOS = {
     terreno = 'Aquí no se puede plantar',
     lejos = 'Tiene que tocar tu territorio',
     separacion = 'Ya hay una bandera tuya aquí al lado',
+    propia = 'Ya es tu territorio: plántala en el borde',
+    enObra = 'Ya tienes una bandera en obra en este bloque',
 }
 
 --- Modo de colocación para la nación `nid`.
