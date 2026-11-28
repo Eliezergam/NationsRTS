@@ -1747,6 +1747,8 @@ function Simulacion:ejecutar(c)
         return self:sumarMisilesAlmacen(c.nacion, c.cantidad)
     elseif t == 'pagarAlmacen' then
         return self:pagarAlmacen(c.nacion, c.coste)
+    elseif t == 'publicarOndix' then
+        return self:publicarOndix(c.nacion, c.texto, c.cita)
     end
     return false, 'tipoDesconocido'
 end
@@ -2167,6 +2169,7 @@ function Simulacion:declararGuerra(a, b, motivo)
         ),
         { 1, 0.35, 0.3 }
     )
+    self:hecho('guerra', a, b)
     return true
 end
 
@@ -2331,6 +2334,10 @@ function Simulacion:enviarGrupo(
     if mision == 'atacar' and destino.tipo == 'bandera' then
         self:guardarBandera(objetivoId)
     end
+    -- Un ejército que sale a atacar algo de otra nación da que hablar (Ondix).
+    if mision == 'atacar' and destino.nacion and destino.nacion ~= nid then
+        self:hecho('marcha', nid, destino.nacion)
+    end
     return gid
 end
 
@@ -2377,6 +2384,7 @@ function Simulacion:destruirInstalacion(inst, por)
     local e = self.estado
     local duena = e.naciones[inst.nacion]
     if inst.tipo == 'bandera' then
+        self:hecho('bandera', por, inst.nacion)
         -- Una bandera no guarda nada: cae su tierra de bandera (banderas.lua).
         self:noticia(
             string.format(
@@ -2397,6 +2405,7 @@ function Simulacion:destruirInstalacion(inst, por)
         string.format('%s destruye %s de %s', e.naciones[por].nombre, nombreInstalacion(self, inst), duena.nombre),
         { 1, 0.55, 0.3 }
     )
+    self:hecho('destruye', por, inst.nacion)
     e.instalaciones[inst.id] = nil
     -- Un depósito de antes de los yacimientos (versión 15) se borra con su extracción.
     if inst.tipo == 'extraccion' and inst.deposito and not inst.deposito:match('^y:') then
@@ -2854,6 +2863,7 @@ function Simulacion:economia(n)
         n.investigacion = n.investigacion - siguiente.coste
         n.tecnologia = n.tecnologia + 1
         self:noticia(string.format('%s desarrolla %s', n.nombre, siguiente.nombre), n.color)
+        self:hecho('tecnologia', n.id, nil, siguiente.nombre)
     end
 
     self:ingresar(n, 'dinero', Simulacion.dineroDelTrabajo(produccion))
@@ -3380,6 +3390,7 @@ function Simulacion:levantarCampamento(nid, x, y)
     end
     Simulacion.pagar(n, c)
     self:noticia(string.format('%s sale a plantar un campamento', n.nombre), n.color)
+    self:hecho('campamento', nid)
     return true
 end
 
@@ -3567,6 +3578,7 @@ function Simulacion:construirBase(n, azar)
                     n.bases = n.bases + 1
                     Simulacion.pagar(n, { dinero = tesoro, metal = metal, petroleo = petroleo })
                     self:noticia(string.format('%s empieza a levantar una base militar', n.nombre), n.color)
+                    self:hecho('base', n.id)
                 end
             end
             return
@@ -3595,6 +3607,7 @@ function Simulacion:obras()
                     self:terminarBandera(i)
                 else
                     self:noticia(string.format('%s termina %s', n.nombre, nombreInstalacion(self, i)), n.color)
+                    self:hecho('obra', i.nacion, nil, nombreInstalacion(self, i))
                     self:reclamarBloque(i)
                 end
             end
@@ -3664,6 +3677,7 @@ function Simulacion:retirar(g, blanco)
         ),
         { 1, 0.7, 0.45 }
     )
+    self:hecho('retirada', g.nacion)
     self:volver(g)
     if e.grupos[g.id] then
         g.retirada = true
@@ -3682,6 +3696,7 @@ end
 -- (`g.botin`) y vuelve a casa con ello. El almacén y la bóveda no se tocan.
 function Simulacion:saquearCapital(c, g)
     local e = self.estado
+    self:hecho('saqueo', g.nacion, c.nacion)
     local n = e.naciones[c.nacion]
     local atacante = e.naciones[g.nacion]
     c.vida = Simulacion.vidaCiudad.derrota
@@ -4108,6 +4123,7 @@ function Simulacion:trabar(g, o, t)
         ),
         { 1, 0.55, 0.35 }
     )
+    self:hecho('choque', atacante.nacion, defensor.nacion)
 end
 
 --- Qué hace hoy un grupo detenido: 'espera' (su guerra está en calma),
@@ -4489,6 +4505,8 @@ require('mundo.simulacion.guardado').instalar(Simulacion)
 require('mundo.simulacion.recoleccion').instalar(Simulacion)
 -- Aviones de transporte (mundo/simulacion/aviones.lua) -----------------------------------------
 require('mundo.simulacion.aviones').instalar(Simulacion)
+-- Ondix, la red social: los presidentes publican por los hechos de la partida.
+require('mundo.simulacion.ondix').instalar(Simulacion)
 
 --- Avanza el tiempo real: `velocidad` días por segundo, en pasos de marcha
 -- (`pasosDia` por día). `self.reloj` es la parte del paso siguiente que ya

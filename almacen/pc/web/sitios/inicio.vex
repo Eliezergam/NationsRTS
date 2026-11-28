@@ -1,0 +1,19 @@
+-- Página de inicio de Vexar: lo primero que abre el navegador.
+nombre('Inicio')
+
+titulo('Red de Vexar')
+texto('Bienvenido a la red. Desde aquí se abren las páginas del juego y las que escribas tú en este puesto.')
+
+if partida.nacion then
+    nota('**' .. partida.nacion .. '** · año ' .. (partida.anio or 0) .. ', día ' .. (partida.dia or 0))
+end
+
+titulo('Páginas de la red', 2)
+punto('[Ondix](ondix.red): lo que publican los presidentes del mundo')
+punto('[Noticias](noticias.red): lo último que ha pasado en la guerra')
+punto('[Ayuda](ayuda.red): cómo escribir tus propias páginas en Lua')
+
+titulo('Tus páginas', 2)
+texto('Las páginas de este puesto están en la carpeta **~/web**. Empieza por la de ejemplo:')
+punto('[Mi base](local/mibase)')
+texto('Para hacer otra, crea un archivo **.vex** en ~/web con el Editor de texto y ábrela escribiendo **local/** y su nombre en la barra de dirección.', 'gris')

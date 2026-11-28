@@ -1,0 +1,13 @@
+-- Las noticias de la partida.
+nombre('Noticias')
+
+titulo('Noticias')
+if #partida.noticias == 0 then
+    texto('Sin noticias por ahora.', 'gris')
+end
+for _, n in ipairs(partida.noticias) do
+    punto('{gris|Día ' .. (n.dia or 0) .. '} · ' .. n.texto)
+end
+
+separador()
+enlace('Volver al inicio', 'inicio.red')

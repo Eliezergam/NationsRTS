@@ -1,0 +1,44 @@
+-- Cómo escribir páginas: la referencia de las funciones.
+nombre('Ayuda')
+
+titulo('Escribir páginas')
+texto('Una página es un archivo **.vex** escrito en Lua. El navegador la ejecuta entera unas diez veces por segundo, así que lo que muestra está siempre al día. Guárdala en **~/web** y ábrela como **local/nombre**.')
+
+titulo('Funciones', 2)
+tabla({
+    { 'Función', 'Qué hace' },
+    { "nombre('Mi base')", 'El título de la ventana' },
+    { "titulo('Texto', 2)", 'Un título; nivel 1, 2 o 3' },
+    { "texto('Hola', 'verde')", 'Un párrafo, con color opcional' },
+    { "punto('Algo')", 'Un punto de una lista' },
+    { "nota('Aviso')", 'Un recuadro destacado' },
+    { "enlace('Inicio', 'inicio.red')", 'Un enlace a otra página' },
+    { "boton('Pulsar')", 'Un botón; devuelve true al pulsarlo' },
+    { "campo('Pista', 3, 280)", 'Un cuadro para escribir (líneas, letras como mucho); devuelve lo escrito' },
+    { "publicar(texto, cita)", 'Publica en Ondix desde tu perfil (solo al pulsar un botón); cita: id de una publicación' },
+    { 'tabla(filas)', 'Una tabla; la primera fila es la cabecera' },
+    { 'separador()', 'Una línea de separación' },
+    { 'espacio(20)', 'Espacio vacío en píxeles' },
+    { 'miles(1234567)', "Devuelve '1.234.567'" },
+})
+
+titulo('Dentro de un texto', 2)
+punto([[**\*\*negrita\*\*** pone el texto en **negrita**]])
+punto([[**\[texto\](destino)** hace un enlace]])
+punto([[**\{color|texto\}** lo pinta en {verde|verde}, {rojo|rojo}, {amarillo|amarillo}, {azul|azul}, {cian|cian}, {naranja|naranja} o {gris|gris}]])
+punto([[Una barra invertida delante, como **\\\***, deja el carácter tal cual]])
+
+titulo('Datos', 2)
+punto('**partida**: nacion, anio, dia, misiles, capacidad, recursos y noticias')
+punto('**robots**: la misma API que en la terminal (robots.lista(), robots.ejecutar(...))')
+
+titulo('Direcciones', 2)
+punto('**noticias.red**: las páginas de la red del juego')
+punto('**local/mibase**: tus páginas, en ~/web')
+punto('Un nombre solo, como **otra**, abre otra.vex de la misma carpeta')
+
+titulo('Un botón que hace algo', 2)
+nota("if boton('Mandar al robot al patio') then robots.ejecutar('almacen', '~/guiones/ir_al_patio.lua') end")
+
+separador()
+enlace('Volver al inicio', 'inicio.red')

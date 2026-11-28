@@ -187,6 +187,12 @@ function Almacen:getSemilla()
     return sim and sim.estado.semilla
 end
 
+--- Publica `texto` en Ondix desde el perfil del presidente; `cita`: el id de
+-- la publicación que cita (o nil). Devuelve si se publicó.
+function Almacen:setPublicarOndix(texto, cita)
+    return (simulacion():ejecutar({ tipo = 'publicarOndix', nacion = self.nacion, texto = texto, cita = cita }))
+end
+
 function Almacen:getPartida()
     return require('almacen.partida').leer(simulacion(), self.nacion)
 end

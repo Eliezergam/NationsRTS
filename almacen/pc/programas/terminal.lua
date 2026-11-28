@@ -28,7 +28,8 @@ function Terminal.nuevo(ordenador)
         nombre = nombre,
         carpeta = '/home/operador',
         lineas = {
-            'Arranque de ' .. nombre .. ' completado.',
+            require('almacen.pc.ordenador').sistema .. ' ' .. require('almacen.pc.ordenador').version
+                .. ': arranque de ' .. nombre .. ' completado.',
             'Conectado a la red del almacén. Escribe «ayuda» para ver las órdenes.',
             '',
         },

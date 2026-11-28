@@ -21,6 +21,14 @@ Dibujo.colorRecurso = {
 
 local LETRA_TITULO = 'assets/fuentes/BarlowCondensed-SemiBold.ttf'
 local LETRA_DATO = 'assets/fuentes/JetBrainsMono-SemiBold.ttf'
+-- Las letras por nombre: 'titulo', 'dato' y las del texto de las páginas
+-- del navegador ('pagina' y 'paginaNegrita').
+local ARCHIVOS_LETRA = {
+    titulo = LETRA_TITULO,
+    dato = LETRA_DATO,
+    pagina = 'assets/fuentes/BarlowSemiCondensed-Medium.ttf',
+    paginaNegrita = 'assets/fuentes/BarlowSemiCondensed-SemiBold.ttf',
+}
 local letras = {}
 
 -- Los ordenadores pintan en 1280 x 720 «lógicos» sobre un lienzo de más
@@ -28,11 +36,12 @@ local letras = {}
 -- densidad para que se lean nítidas a pantalla completa.
 Dibujo.densidad = 1.5
 
---- La letra `cual` ('titulo' o 'dato') a `tamano` px (se crea una vez).
+--- La letra `cual` ('titulo', 'dato', 'pagina' o 'paginaNegrita') a
+-- `tamano` px (se crea una vez).
 function Dibujo.letra(cual, tamano)
     local clave = cual .. tamano
     if not letras[clave] then
-        letras[clave] = love.graphics.newFont(cual == 'titulo' and LETRA_TITULO or LETRA_DATO, tamano, 'normal', Dibujo.densidad)
+        letras[clave] = love.graphics.newFont(ARCHIVOS_LETRA[cual] or LETRA_DATO, tamano, 'normal', Dibujo.densidad)
     end
     return letras[clave]
 end

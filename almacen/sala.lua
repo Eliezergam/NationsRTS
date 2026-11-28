@@ -216,7 +216,23 @@ end
 
 -- Pintar -----------------------------------------------------------------------
 
+--- Lo que usan las páginas para publicar en Ondix (pagina.lua): manda la
+-- orden y relee la partida en la vuelta siguiente para que se vea (no aquí:
+-- se está pintando la página).
+function SalaControl:prepararOndix()
+    self.publicarOndix = function(texto, cita)
+        local hecho = self.almacen:setPublicarOndix(texto, cita)
+        if hecho then
+            self.proximo = 0
+        end
+        return hecho
+    end
+end
+
 function SalaControl:pintar()
+    if not self.publicarOndix then
+        self:prepararOndix()
+    end
     local partida = self.almacen:getPartida()
     local misiles, capacidad = self.almacen:getMisiles(), self.almacen:getCapacidad()
     self.partida = partida
@@ -237,7 +253,13 @@ end
 -- que se está usando se pinta cada cuadro: almacen/pc/uso.lua).
 function SalaControl:pintarOrdenador(k)
     local d = self.datosPC or {}
-    local ctx = { partida = d.partida, misiles = d.misiles or 0, capacidad = d.capacidad or 0, reloj = self.reloj }
+    local ctx = {
+        partida = d.partida,
+        misiles = d.misiles or 0,
+        capacidad = d.capacidad or 0,
+        reloj = self.reloj,
+        publicarOndix = self.publicarOndix,
+    }
     self.ordenadores[k]:pintar(ctx)
 end
 

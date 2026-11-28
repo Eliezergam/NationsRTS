@@ -126,9 +126,11 @@ function Diplomacia:diplomacia(a, b, azar)
     if suceso < 0.002 then
         cambio = cambio - 15
         self:noticia(string.format('Incidente fronterizo entre %s y %s', a.nombre, b.nombre), { 1, 0.7, 0.4 })
+        self:hecho('incidente', a.id, b.id)
     elseif suceso > 0.998 then
         cambio = cambio + 15
         self:noticia(string.format('%s y %s firman un acuerdo comercial', a.nombre, b.nombre), { 0.6, 1, 0.6 })
+        self:hecho('acuerdo', a.id, b.id)
     end
     cambiarRelacion(self, a.id, b.id, cambio)
     if a.jugador then
@@ -383,6 +385,7 @@ function Diplomacia:firmarPaz(g, concesion)
         end
     end
     self:noticia(string.format('%s y %s firman la paz%s', a.nombre, b.nombre, concesion or ''), { 0.7, 1, 0.8 })
+    self:hecho('paz', a.id, b.id)
     return true
 end
 
@@ -442,11 +445,13 @@ function Diplomacia:negociar(g, azar)
             ),
             { 0.75, 0.9, 1 }
         )
+        self:hecho('altoFuego', a.id, b.id)
     else
         self:noticia(
             string.format('Fracasan las conversaciones entre %s y %s', a.gobernante.nombre, b.gobernante.nombre),
             { 1, 0.65, 0.5 }
         )
+        self:hecho('fracaso', a.id, b.id)
     end
 end
 
@@ -474,6 +479,9 @@ function Diplomacia:guerra(g, azar)
                     string.format('Se rompe el alto el fuego entre %s y %s', a.nombre, b.nombre),
                     { 1, 0.45, 0.35 }
                 )
+                -- Lo cuenta el más agresivo (el que la rompe).
+                local rompe = (a.jugador and 0 or a.gobernante.agresividad) >= (b.jugador and 0 or b.gobernante.agresividad)
+                self:hecho('rotura', rompe and a.id or b.id, rompe and b.id or a.id)
             else
                 self:firmarPaz(g, ': la calma se consolida')
             end

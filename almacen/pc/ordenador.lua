@@ -32,6 +32,8 @@ local Archivos = require('almacen.pc.archivos')
 local Ordenador = {}
 Ordenador.__index = Ordenador
 
+Ordenador.sistema = 'Vexar' -- nombre del sistema de los ordenadores (el dueño, 26-nov)
+Ordenador.version = '1.0'
 Ordenador.ancho = 1280
 Ordenador.alto = 720
 Ordenador.altoPanel = 44
@@ -334,6 +336,9 @@ local function fondoEscritorio(self, w, h)
     g.setColor(1, 1, 1, 0.07)
     g.setFont(Dibujo.letra('titulo', 64))
     g.printf(self.nombre:upper(), 0, h - Ordenador.altoPanel - 96, w - 40, 'right')
+    g.setColor(1, 1, 1, 0.05)
+    g.setFont(Dibujo.letra('dato', 18))
+    g.printf(Ordenador.sistema .. ' ' .. Ordenador.version, 0, h - Ordenador.altoPanel - 28, w - 44, 'right')
 end
 
 function Ordenador.iconoCarpeta(x, y, s, color, emblema)
@@ -518,7 +523,7 @@ local function menu(self, h)
     g.rectangle('line', x + 0.5, y + 0.5, w - 1, #lista * alto + 51, 8)
     g.setColor(0.6, 0.65, 0.66)
     g.setFont(Dibujo.letra('dato', 14))
-    g.print('PROGRAMAS', x + 18, y + 14)
+    g.print(Ordenador.sistema:upper() .. ' · PROGRAMAS', x + 18, y + 14)
     self.zonas.menu = {}
     g.setFont(Dibujo.letra('titulo', 22))
     local raton = self.cursor

@@ -553,6 +553,7 @@ function Batallas:caerEnBatalla(b, g, ganador, azar)
             string.format('El ejército de %s cae en %s', self:nombreNacionDe(g), self:nombreBatalla(b)),
             { 1, 0.45, 0.35 }
         )
+        self:hecho('derrota', g.nacion)
     end
 end
 
@@ -622,6 +623,7 @@ function Batallas:danarSitio(b, s, bajas, atacante, conGrupos, azar)
                 ),
                 { 1, 0.6, 0.35 }
             )
+            self:hecho('asedio', atacante, s.nacion)
         end
         return
     end
@@ -781,6 +783,10 @@ function Batallas:cerrarBatalla(b, ganador)
             string.format('%s resiste el asalto%s', sitio.nombre, atacante and (' de ' .. atacante) or ''),
             { 1, 0.75, 0.5 }
         )
+        local asaltante = self:gruposBando(b, 'atacante')[1]
+        if asaltante then
+            self:hecho('resiste', sitio.nacion, asaltante.nacion)
+        end
     end
     for _, g in ipairs(ganadores) do
         if e.grupos[g.id] == g then

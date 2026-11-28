@@ -107,6 +107,32 @@ local function ejecutablesDelJuego()
     return lista
 end
 
+-- Las páginas web del juego (almacen/pc/web/sitios/*.vex), en /red/web: se
+-- leen del disco cada vez, como el resto de la red.
+local function sitiosWeb()
+    local lista = {}
+    local carpeta = 'almacen/pc/web/sitios'
+    for _, archivo in ipairs(love.filesystem.getDirectoryItems(carpeta)) do
+        if archivo:match('%.vex$') then
+            lista[#lista + 1] = {
+                nombre = archivo,
+                tipo = 'texto',
+                leer = function()
+                    local t = {}
+                    for l in ((love.filesystem.read(carpeta .. '/' .. archivo) or '') .. '\n'):gmatch('(.-)\n') do
+                        t[#t + 1] = l
+                    end
+                    return t
+                end,
+            }
+        end
+    end
+    table.sort(lista, function(a, b)
+        return a.nombre < b.nombre
+    end)
+    return lista
+end
+
 local red = {
     nombre = 'red',
     carpeta = true,
@@ -121,6 +147,7 @@ local red = {
                 { nombre = 'guiones', carpeta = true, hijos = ejecutablesDelJuego() },
             },
         },
+        { nombre = 'web', carpeta = true, hijos = sitiosWeb() },
     },
 }
 
@@ -464,7 +491,8 @@ function Archivos:borrar(ruta)
     return false, 'no existe'
 end
 
---- El programa que abre el archivo `ruta`: 'hoja', 'texto' o 'archivos'.
+--- El programa que abre el archivo `ruta`: 'hoja', 'texto', 'navegador' (las
+-- páginas .vex) o 'archivos'.
 function Archivos:programaPara(ruta)
     local nodo = self:buscar(ruta)
     if not nodo then
@@ -472,6 +500,9 @@ function Archivos:programaPara(ruta)
     end
     if nodo.carpeta then
         return 'archivos'
+    end
+    if nodo.nombre:match('%.vex$') then
+        return 'navegador'
     end
     return nodo.tipo == 'hoja' and 'hoja' or 'texto'
 end

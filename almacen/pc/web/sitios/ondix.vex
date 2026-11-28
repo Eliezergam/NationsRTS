@@ -1,0 +1,223 @@
+-- Ondix: la red social del mundo (mundo/simulacion/ondix.lua). Publica todo
+-- el mundo en su perfil: los presidentes (si hablan de lo que dijo otro, lo
+-- citan) y la gente (mundo/simulacion/ondix_gente.lua). Debajo de cada
+-- publicación comenta la gente.
+--
+--   ondix.red               el muro: tendencias, presidentes y publicaciones
+--   ondix.red/Dobel         el perfil de @Dobel (un presidente o cualquiera)
+--   ondix.red/p/42          la publicación 42 con los comentarios de la gente
+--   ondix.red/etiqueta/X    las publicaciones con #X
+
+local CARACTER = { agresivo = 'Agresivo', burlon = 'Burlón', diplomatico = 'Diplomático', orgulloso = 'Orgulloso' }
+
+local function porUsuario(usuario)
+    for _, perfil in ipairs(partida.perfiles) do
+        if perfil.usuario:lower() == usuario:lower() then
+            return perfil
+        end
+    end
+end
+
+local function enlaceDe(p)
+    return 'ondix.red/p/' .. p.id
+end
+
+-- Una publicación de la lista, con su cita.
+local function mostrar(p)
+    local cita
+    if p.cita then
+        cita = {
+            nombre = p.cita.presidente ~= '' and p.cita.presidente or p.cita.nombre,
+            usuario = p.cita.usuario,
+            color = p.cita.color,
+            dia = p.cita.dia,
+            texto = p.cita.texto,
+            enlace = enlaceDe(p.cita),
+        }
+    end
+    publicacion({
+        nombre = p.gente and p.nombre or (p.presidente ~= '' and p.presidente or p.nacion),
+        usuario = p.usuario,
+        color = p.color,
+        dia = p.dia,
+        texto = p.texto,
+        apoyos = p.apoyos,
+        reenvios = p.reenvios,
+        comentarios = p.comentarios,
+        aFavor = p.aFavor,
+        enlace = enlaceDe(p),
+        cita = cita,
+    })
+end
+
+-- El perfil del jugador (su presidente), si tiene.
+local function miPerfil()
+    for _, perfil in ipairs(partida.perfiles) do
+        if perfil.jugador then
+            return perfil
+        end
+    end
+end
+
+-- El cuadro para publicar (o citar `cita`, el id de una publicación).
+local function escribir(pista, boton_, cita)
+    local yo = miPerfil()
+    if not yo then
+        return
+    end
+    local escrito = campo(pista, 3, 280)
+    if boton(boton_) then
+        publicar(escrito, cita)
+    end
+end
+
+local function cabecera()
+    titulo('{cian|Ondix}')
+    texto('Lo que se dice en el mundo, al momento. [Inicio de Ondix](ondix.red)', 'gris')
+end
+
+-- Una publicación con los comentarios de la gente -------------------------------
+local id = parametro and parametro:match('^p/(.+)$')
+if id then
+    local elegida
+    for _, p in ipairs(partida.ondix) do
+        if tostring(p.id) == id then
+            elegida = p
+        end
+    end
+    cabecera()
+    if not elegida then
+        texto('Esta publicación ya no está disponible.', 'gris')
+        return
+    end
+    nombre((elegida.gente and elegida.nombre or elegida.presidente) .. ' en Ondix')
+    mostrar(elegida)
+    if not elegida.gente and miPerfil() and elegida.usuario ~= miPerfil().usuario then
+        titulo('Citar en tu perfil', 3)
+        escribir('Lo que dices de lo que ha publicado ' .. elegida.usuario, 'Citar', elegida.id)
+    end
+    titulo('Comentarios', 3)
+    texto('**' .. miles(elegida.comentarios) .. '** comentarios', 'gris')
+    memoria.vistos = memoria.vistos or 20
+    for _, c in ipairs(comentarios(elegida, 1, memoria.vistos)) do
+        comentario(c)
+    end
+    if memoria.vistos < elegida.comentarios then
+        espacio(8)
+        if boton('Ver más comentarios') then
+            memoria.vistos = memoria.vistos + 20
+        end
+    end
+    return
+end
+
+-- Publicaciones con una etiqueta -------------------------------------------------
+local etiqueta = parametro and parametro:match('^etiqueta/(.+)$')
+if etiqueta then
+    cabecera()
+    nombre('#' .. etiqueta .. ' en Ondix')
+    titulo('#' .. etiqueta, 2)
+    local hay = false
+    for _, p in ipairs(partida.ondix) do
+        if p.texto:find('#' .. etiqueta, 1, true) then
+            mostrar(p)
+            hay = true
+        end
+    end
+    if not hay then
+        texto('Nadie habla de esto ahora mismo.', 'gris')
+    end
+    return
+end
+
+-- Perfil de un presidente --------------------------------------------------------
+if parametro then
+    local perfil = porUsuario('@' .. parametro)
+    cabecera()
+    if not perfil then
+        -- Alguien de la gente: lo que ha publicado estos días.
+        local suyas = {}
+        for _, p in ipairs(partida.ondix) do
+            if p.gente and p.usuario:lower() == ('@' .. parametro):lower() then
+                suyas[#suyas + 1] = p
+            end
+        end
+        if #suyas == 0 then
+            texto('@' .. parametro .. ' no ha publicado nada estos días.', 'gris')
+            return
+        end
+        nombre(suyas[1].nombre .. ' (' .. suyas[1].usuario .. ')')
+        titulo(suyas[1].nombre, 2)
+        texto('{gris|' .. suyas[1].usuario .. '} · vive en **' .. suyas[1].nacion .. '**')
+        titulo('Publicaciones', 3)
+        for _, p in ipairs(suyas) do
+            mostrar(p)
+        end
+        return
+    end
+    nombre(perfil.presidente .. ' (' .. perfil.usuario .. ')')
+    titulo(perfil.presidente, 2)
+    texto('{gris|' .. perfil.usuario .. '} · presidente de **' .. perfil.nacion .. '**')
+    tabla({
+        { 'Seguidores', 'Habitantes', 'Capital', 'Orden', 'Carácter' },
+        { miles(perfil.seguidores), miles(perfil.habitantes), perfil.capital, perfil.orden, CARACTER[perfil.tono] or '' },
+    })
+    titulo('Publicaciones', 3)
+    if perfil.jugador then
+        escribir('Escribe algo…', 'Publicar')
+    end
+    local hay = false
+    for _, p in ipairs(partida.ondix) do
+        if p.usuario == perfil.usuario then
+            mostrar(p)
+            hay = true
+        end
+    end
+    if not hay then
+        texto(perfil.jugador and 'Todavía no has publicado nada.' or 'Todavía no ha publicado nada.', 'gris')
+    end
+    return
+end
+
+-- El muro ------------------------------------------------------------------------
+nombre('Ondix')
+cabecera()
+
+-- Tendencias: las etiquetas más repetidas en las últimas publicaciones.
+local cuenta, orden = {}, {}
+for _, p in ipairs(partida.ondix) do
+    for marca in p.texto:gmatch('#[%w_\128-\255]+') do
+        if not cuenta[marca] then
+            orden[#orden + 1] = marca
+        end
+        cuenta[marca] = (cuenta[marca] or 0) + p.apoyos
+    end
+end
+table.sort(orden, function(a, b)
+    if cuenta[a] ~= cuenta[b] then
+        return cuenta[a] > cuenta[b]
+    end
+    return a < b
+end)
+if #orden > 0 then
+    titulo('Tendencias', 3)
+    for k = 1, math.min(5, #orden) do
+        punto(orden[k] .. '  {gris|' .. miles(cuenta[orden[k]]) .. ' me gusta}')
+    end
+end
+
+titulo('Presidentes', 3)
+local nombres = {}
+for _, perfil in ipairs(partida.perfiles) do
+    nombres[#nombres + 1] = '[' .. perfil.usuario .. '](ondix.red/' .. perfil.usuario:sub(2) .. ')'
+end
+texto(table.concat(nombres, '   '))
+
+titulo('Publicaciones', 3)
+escribir('Escribe algo…', 'Publicar')
+if #partida.ondix == 0 then
+    texto('Nadie ha publicado todavía.', 'gris')
+end
+for _, p in ipairs(partida.ondix) do
+    mostrar(p)
+end
