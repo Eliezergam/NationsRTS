@@ -1,13 +1,15 @@
 # El avión de transporte para el mapa 2D (diseno/aviones-de-transporte.md,
 # paso 2): el modelo 3D del juego (assets/batalla/robots/avionCarga_lod2.glb)
 # visto con el ángulo de la vista isométrica del mapa (mundo/iso.lua: 2:1,
-# elevación 30°, a 45°), en 16 rumbos, y una hoja con los 16.
+# elevación 30°, a 45°), en 64 rumbos, y una hoja con los 64; y su sombra:
+# la silueta vista desde arriba (se proyecta en el suelo al dibujarla).
 #
 #     blender -b --factory-startup --python tools/blender/avion_mapa.py
 #
-# Deja assets/mapa/avion/avion.png (4 x 4 cuadros de TAM px, el rumbo k en
-# la fila k // 4 y la columna k % 4) y assets/mapa/avion/indice.lua. El rumbo
-# k es el ángulo k * 22,5° en el plano del mapa (x a la derecha y abajo en la
+# Deja assets/mapa/avion/avion.png (8 x 8 cuadros de TAM px, el rumbo k en
+# la fila k // 8 y la columna k % 8), sombra.png (rumbo 0, con x del mapa a la
+# derecha e y abajo) y assets/mapa/avion/indice.lua. El rumbo
+# k es el ángulo k * 5,625° en el plano del mapa (x a la derecha y abajo en la
 # vista, y a la izquierda y abajo), como math.atan2(dy, dx).
 
 import math
@@ -21,7 +23,8 @@ RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 MODELO = os.path.join(RAIZ, 'assets', 'batalla', 'robots', 'avionCarga_lod2.glb')
 DESTINO = os.path.join(RAIZ, 'assets', 'mapa', 'avion')
 TAM = 256  # px por cuadro
-RUMBOS = 16
+RUMBOS = 64
+COLUMNAS = 8
 TEMPORAL = os.path.join(os.environ.get('TMPDIR', '/tmp'), 'avion_mapa')
 
 
@@ -112,28 +115,39 @@ def main():
         bpy.context.scene.render.filepath = ruta
         bpy.ops.render.render(write_still=True)
         rutas.append(ruta)
-    # La hoja: 4 x 4.
-    hoja = bpy.data.images.new('hoja', TAM * 4, TAM * 4, alpha=True)
-    pix = [0.0] * (TAM * 4 * TAM * 4 * 4)
+    # La hoja: COLUMNAS x COLUMNAS.
+    C = COLUMNAS
+    hoja = bpy.data.images.new('hoja', TAM * C, TAM * C, alpha=True)
+    pix = [0.0] * (TAM * C * TAM * C * 4)
     for k, ruta in enumerate(rutas):
         img = bpy.data.images.load(ruta)
         datos = list(img.pixels)
-        col, fila = k % 4, k // 4
+        col, fila = k % C, k // C
         for y in range(TAM):
             # Blender guarda las filas de abajo arriba.
-            yh = (3 - fila) * TAM + y
-            inicio = (yh * TAM * 4 + col * TAM) * 4
+            yh = (C - 1 - fila) * TAM + y
+            inicio = (yh * TAM * C + col * TAM) * 4
             pix[inicio:inicio + TAM * 4] = datos[y * TAM * 4:(y + 1) * TAM * 4]
     hoja.pixels = pix
     hoja.filepath_raw = os.path.join(DESTINO, 'avion.png')
     hoja.file_format = 'PNG'
     hoja.save()
+    # La sombra: desde arriba, rumbo 0 (morro a +X de Blender = +x del mapa;
+    # arriba de la imagen = +Y de Blender = -y del mapa).
+    eje.rotation_euler = (0, 0, 0)
+    cam = bpy.context.scene.camera
+    cam.location = (0, 0, 200)
+    cam.rotation_euler = (0, 0, 0)
+    bpy.context.scene.render.filepath = os.path.join(DESTINO, 'sombra.png')
+    bpy.ops.render.render(write_still=True)
     with open(os.path.join(DESTINO, 'indice.lua'), 'w') as f:
         f.write('-- Generado por tools/blender/avion_mapa.py: no editar a mano.\n')
         f.write('return {\n')
         f.write("    hoja = 'assets/mapa/avion/avion.png',\n")
         f.write('    cuadro = %d, -- px por cuadro\n' % TAM)
-        f.write('    rumbos = %d, -- el k-ésimo, en la fila k // 4 y la columna k %% 4\n' % RUMBOS)
+        f.write("    sombra = 'assets/mapa/avion/sombra.png', -- desde arriba, rumbo 0\n")
+        f.write('    rumbos = %d, -- el k-ésimo, en la fila k // columnas y la columna k %% columnas\n' % RUMBOS)
+        f.write('    columnas = %d,\n' % COLUMNAS)
         f.write('    metros = %.2f, -- lo que mide de ancho un cuadro, en metros\n' % (radio * 2.15))
         f.write('}\n')
     print('AVION MAPA listo', DESTINO)

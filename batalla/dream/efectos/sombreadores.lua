@@ -189,12 +189,76 @@ local VERTICES_ESTELA = Comun.vertices
     }
 ]]
 
+-- Estelas de condensación de las puntas de las alas del avión de carga
+-- (estelas_avion.lua). La misma cinta que el humo de los misiles, pero
+-- vapor: un hilo blanco de unos 20 cm que en un par de segundos se abre a
+-- metro y medio y se disuelve. EstelaC.w no es el ancho sino la intensidad
+-- (0-1, de cuánta sustentación hacía el ala al soltarla).
+local VERTICES_VAPOR = Comun.vertices
+    .. [[
+    attribute vec4 EstelaB;
+    attribute vec4 EstelaC;
+    uniform float estelaArrastre;
+    uniform float estelaSubida;
+    uniform float estelaViento;
+    uniform float estelaTesela;
+
+    vec4 position(mat4 _proyeccion, vec4 vertice) {
+        float e = efectoTiempo - vertice.w;
+        float vida = max(EstelaC.z, 0.0001);
+        float f = e / vida;
+        float intensidad = EstelaC.w;
+        if (e < 0.0 || f >= 1.0 || intensidad <= 0.0) {
+            vAlfa = 0.0;
+            return vec4(0.0, 0.0, -10.0, 1.0);
+        }
+        float semilla = EstelaC.y;
+        float recorrido = EstelaC.x;
+        vec3 v;
+        vec3 p = efectoMover(vertice.xyz, vec3(0.0), e, estelaArrastre, estelaSubida, estelaViento, -100000.0, v);
+        // El torbellino baja despacio y se riza un poco con la edad.
+        float onda = 0.012 * sqrt(e);
+        p += vec3(
+            sin(recorrido * 0.21 + semilla + e * 0.8),
+            0.6 * sin(recorrido * 0.17 + semilla * 1.7 + e * 0.6),
+            cos(recorrido * 0.19 + semilla * 2.3 + e * 0.7)
+        ) * onda;
+
+        // 0,2 m al nacer, unos 0,8 m al segundo y 1,5 m al final.
+        float ancho = 0.02 + 0.06 * (1.0 - exp(-e * 2.0)) + 0.02 * e;
+        vec3 hastaOjo = efectoOjo - p;
+        float distancia = length(hastaOjo);
+        vec3 lado = cross(EstelaB.xyz, hastaOjo);
+        float largoLado = length(lado);
+        lado = largoLado > distancia * 0.0001 ? lado / largoLado : efectoDerecha;
+        float minimo = distancia * efectoPixel * 1.2;
+        float visible = max(ancho, minimo);
+        vec3 posicion = p + lado * visible * EstelaB.w;
+        VaryingTexCoord = vec4(recorrido / estelaTesela + semilla * 0.37, EstelaB.w * 0.5 + 0.5, 0.0, 0.0);
+
+        float blanco = 0.94 + 0.04 * sin(semilla * 5.0 + recorrido * 0.05);
+        vec3 vapor = pow(vec3(blanco, blanco, blanco * 0.99), vec3(2.2));
+        // Más ancho, más tenue; aparece en el primer décimo de segundo.
+        float densidad = pow(0.02 / ancho, 0.5);
+        float alfa = 0.7 * intensidad * densidad * pow(1.0 - f, 1.5) * smoothstep(0.0, 0.1, e);
+        vAlfa = alfa * ancho / visible;
+        vLuz = vapor * (efectoIluminar(p) + efectoContraluz(p));
+        vEmision = vec3(0.0);
+        vNiebla = efectoNieblaEn(p);
+        return efectoProyectar(posicion);
+    }
+]]
+
 function Sombreadores.particula()
     return love.graphics.newShader(Comun.pixeles, VERTICES_PARTICULA)
 end
 
 function Sombreadores.estela()
     return love.graphics.newShader(Comun.pixeles, VERTICES_ESTELA)
+end
+
+function Sombreadores.vapor()
+    return love.graphics.newShader(Comun.pixeles, VERTICES_VAPOR)
 end
 
 return Sombreadores

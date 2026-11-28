@@ -87,7 +87,7 @@ function EfectosDream.nuevos(dream, conversor, tropas, suelo, opciones)
     self.texturas = Texturas.crear()
     local tx = self.texturas
     local particula = Sombreadores.particula()
-    self.sombreadores = { particula = particula, estela = Sombreadores.estela() }
+    self.sombreadores = { particula = particula, estela = Sombreadores.estela(), vapor = Sombreadores.vapor() }
 
     self.lotes = {}
     local function lote(nombre, datos)
@@ -157,6 +157,23 @@ function EfectosDream.nuevos(dream, conversor, tropas, suelo, opciones)
             estelaSubida = 0.02,
             estelaViento = 1,
             estelaTesela = 18,
+            efectoSuave = 2,
+            efectoAditivo = 0,
+        },
+    })
+    -- Estelas de condensación de las alas del avión (estelas_avion.lua).
+    self.cintaVapor = Cinta.nueva(dream, conversor, {
+        cabezas = 4,
+        tramos = 4096,
+        porCuadro = 256,
+        vida = 4,
+        sombreador = self.sombreadores.vapor,
+        textura = tx.estela,
+        parametros = {
+            estelaArrastre = 1.5,
+            estelaSubida = -0.004,
+            estelaViento = 1,
+            estelaTesela = 30,
             efectoSuave = 2,
             efectoAditivo = 0,
         },
@@ -370,6 +387,7 @@ function EfectosDream:dibujar()
         l:subir()
     end
     self.cinta:subir()
+    self.cintaVapor:subir()
     for _, nombre in ipairs(self.lotesDream) do
         self.lotes[nombre]:dibujar()
     end
@@ -460,6 +478,7 @@ function EfectosDream:dibujarEncima()
     love.graphics.setMeshCullMode('none')
     love.graphics.setColor(1, 1, 1, 1)
     self.cinta:dibujar()
+    self.cintaVapor:dibujar()
     local solo = os.getenv('EFECTOS_SOLO')
     for _, nombre in ipairs(self.lotesEncima) do
         if not solo or solo == nombre then
