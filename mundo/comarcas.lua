@@ -513,6 +513,7 @@ function Comarcas:recibir(ms)
         elseif r.mundo == self.id and r.zona then
             if r.datos then
                 self.mundo.zonasHechas[r.zx .. ',' .. r.zy] = r.datos
+                self.mundo:sembrarZona(r.zx, r.zy, r.datos, r.ciudades)
             else
                 print('ZONA: ' .. tostring(r.error))
             end

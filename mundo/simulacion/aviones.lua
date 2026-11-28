@@ -126,6 +126,27 @@ function Aviones:avionesDe(nid)
     return { libres = libres, total = total }
 end
 
+--- Los aviones de todas las naciones de una pasada: [nid] = lo mismo que
+-- `avionesDe(nid)` (27-nov: dar avión a los que esperan hacía una pasada y
+-- un orden de todos los aviones por cada nación, en cada paso).
+function Aviones:flotas()
+    local e = self.estado
+    local porNacion = {}
+    for _, id in ipairs(ordenadas(e.aviones or {})) do
+        local a = e.aviones[id]
+        local flota = porNacion[a.nacion]
+        if not flota then
+            flota = { libres = {}, total = 0 }
+            porNacion[a.nacion] = flota
+        end
+        flota.total = flota.total + 1
+        if not a.vuelo then
+            flota.libres[#flota.libres + 1] = a
+        end
+    end
+    return porNacion
+end
+
 --- El vuelo que lleva ahora a `g` (en la fase 'llevar'), o nil.
 function Aviones:vueloLlevando(g)
     local v = g.vuelo and self.estado.vuelos and self.estado.vuelos[g.vuelo]
@@ -154,12 +175,13 @@ end
 --- Da avión a los grupos que esperan (`esperan`, en orden de id).
 function Aviones:asignarAviones(esperan)
     local e = self.estado
-    local porNacion = {}
+    local porNacion
     for _, g in ipairs(esperan) do
         if e.grupos[g.id] == g and not (g.vuelo and e.vuelos[g.vuelo]) then
+            porNacion = porNacion or self:flotas()
             local flota = porNacion[g.nacion]
             if not flota then
-                flota = self:avionesDe(g.nacion)
+                flota = { libres = {}, total = 0 }
                 porNacion[g.nacion] = flota
             end
             if #flota.libres > 0 then

@@ -38,6 +38,10 @@ Mundo.zoomMinimo = 0.04 -- el zoom más lejano: lo que se ve con él ya está ge
 Mundo.zona = Ciudades.porNacion -- regiones por lado de una nación
 
 local LADO = Terreno.celda * Terreno.celdasPorTrozo
+-- Cada mundo recibe las mallas de territorio de los hilos por su propio canal.
+local siguienteMundo = 0
+-- s que se espera la respuesta de un hilo antes de volver a pedirla.
+local ESPERA_TERRITORIO = 2
 
 function Mundo.nuevo(semilla)
     local self = setmetatable({}, Mundo)
@@ -47,6 +51,10 @@ function Mundo.nuevo(semilla)
     self.terreno.ciudades = self.ciudades
     self.recursos = Recursos.nuevo(self.terreno, self.ciudades)
     self.trozos = {} -- 'tx,ty' -> trozo de una comarca lista (para el territorio)
+    siguienteMundo = siguienteMundo + 1
+    self.canalTerritorio = 'territorio.hechos.' .. siguienteMundo
+    -- Sube al cambiar de simulación: lo que se pidió con la de antes se tira.
+    self.generacionTerritorio = 0
     self.cuantos = 0
     self.ciudadesVistas = {} -- nombre -> ciudad
     self.ciudadesPorId = {} -- id de región -> ciudad dibujable
@@ -67,6 +75,7 @@ function Mundo.nuevo(semilla)
         end,
     }
     self.obrasVistas = {} -- instalaciones ya apartadas de las plantas
+    self.huertosVistos = {} -- [ciudad] = su huerto ya apartado de las plantas
     self.sim = Simulacion.nueva(semilla, self:opcionesSimulacion())
     self.comarcas = Comarcas.nuevo(self)
     self.msGenerar = 0
@@ -134,6 +143,51 @@ function Mundo:datosZona(zx, zy)
         return hecha
     end
     return Generador.datosZona({ ciudades = self.ciudades, recursos = self.recursos }, zx, zy)
+end
+
+--- Lo que un hilo ya calculó de la zona (zx, zy) queda en las cachés de aquí:
+-- los yacimientos de sus regiones (`datos.depositos`, los de
+-- `Generador.datosZona`) y sus candidatas a ciudad y capitales (`ciudades`,
+-- de `mundo/obrero.lua`). 27-nov: al mover la cámara, inventar aquí los
+-- yacimientos o la ciudad de una región nueva eran 25-30 ms de golpe. Sale lo
+-- mismo que si se calculara aquí (la misma semilla y el mismo código); lo que
+-- ya estaba no se toca.
+function Mundo:sembrarZona(zx, zy, datos, ciudades)
+    local lado = Recursos.region
+    local ancho = Ciudades.porNacion * Ciudades.region
+    local x0, y0 = zx * ancho, zy * ancho
+    -- Cada yacimiento, en la región en la que cae (como `Recursos:deRegion`),
+    -- en el mismo orden.
+    local listas = {}
+    for _, d in ipairs(datos.depositos or {}) do
+        local k = math.floor(d.x / lado) .. ',' .. math.floor(d.y / lado)
+        listas[k] = listas[k] or {}
+        local lista = listas[k]
+        lista[#lista + 1] = d
+    end
+    local regiones = self.recursos.regiones
+    for ry = math.floor(y0 / lado), math.floor((y0 + ancho - 1) / lado) do
+        for rx = math.floor(x0 / lado), math.floor((x0 + ancho - 1) / lado) do
+            local k = rx .. ',' .. ry
+            if regiones[k] == nil then
+                regiones[k] = listas[k] or {}
+            end
+        end
+    end
+    if ciudades then
+        -- La capital es la misma tabla que su candidata (`Ciudades:deRegion`).
+        local propias = self.ciudades
+        for k, candidata in pairs(ciudades.candidatas) do
+            if propias.regiones[k] == nil then
+                propias.regiones[k] = candidata
+            end
+        end
+        for k, es in pairs(ciudades.capitales) do
+            if propias.capitales[k] == nil then
+                propias.capitales[k] = es and propias.regiones[k] or false
+            end
+        end
+    end
 end
 
 --- Registra la nación de una región y las de alrededor (sin seguir más lejos).
@@ -301,27 +355,31 @@ function Mundo:usarSimulacion(sim)
     sim.sitioValido = opciones.sitioValido
     self.choques, self.enChoque = {}, {}
     self.batallasVistas = {}
+    self.generacionTerritorio = (self.generacionTerritorio or 0) + 1
     for _, t in pairs(self.trozos) do
-        t.versionTerritorio, t.firmaTerritorio = nil, nil
+        t.versionTerritorio, t.firmaTerritorio, t.firmaPedida = nil, nil, nil
     end
 end
 
 --- Cuando aparece una obra nueva en un trozo cargado, se apartan sus plantas.
+-- Va en cada cuadro: sin listas ni orden (27-nov: ordenar todas las obras en
+-- cada cuadro costaba más cuanto más larga la partida; da igual en qué orden
+-- se rehagan las nuevas).
 function Mundo:apartarPlantas()
-    local obras = {}
-    for _, id in ipairs(Simulacion.ordenadas(self.sim.estado.instalaciones)) do
-        obras[#obras + 1] = { clave = id, sitio = self.sim.estado.instalaciones[id] }
-    end
-    for _, id in ipairs(Simulacion.ordenadas(self.sim.estado.ciudades)) do
-        local h = self.sim.estado.ciudades[id].huerto
-        if h then
-            obras[#obras + 1] = { clave = 'huerto:' .. id, sitio = h }
+    local e = self.sim.estado
+    local vistas = self.obrasVistas
+    for id, sitio in pairs(e.instalaciones) do
+        if not vistas[id] then
+            vistas[id] = true
+            self.comarcas:rehacerCerca(sitio.x, sitio.y)
         end
     end
-    for _, obra in ipairs(obras) do
-        if not self.obrasVistas[obra.clave] then
-            self.obrasVistas[obra.clave] = true
-            self.comarcas:rehacerCerca(obra.sitio.x, obra.sitio.y)
+    local huertos = self.huertosVistos
+    for id, ciudad in pairs(e.ciudades) do
+        local h = ciudad.huerto
+        if h and huertos[id] ~= h then
+            huertos[id] = h
+            self.comarcas:rehacerCerca(h.x, h.y)
         end
     end
 end
@@ -445,52 +503,119 @@ end
 -- grosor de las franjas (el zoom cruza su umbral). Primero los trozos que se
 -- ven (caja x0, y0, x1, y1 del mundo), con `presupuesto` ms por cuadro como
 -- mucho (3 si no se da), y después uno o dos de los de fuera (de las comarcas
--- que tocan la `vista` con un margen). Devuelve cuántos de los que se ven
--- quedan por rehacer.
+-- que tocan la `vista` con un margen). Las mallas las hacen los hilos
+-- (`Territorio.pedir`); mientras llega la nueva, se sigue viendo la de antes.
+-- Devuelve cuántos de los que se ven quedan por rehacer o esperan al hilo.
 function Mundo:repintarTerritorio(x0, y0, x1, y1, vista, presupuesto)
     local inicio = love.timer.getTime()
     local limite = (presupuesto or 3) / 1000
+    self:recibirTerritorio()
     local grosor = Territorio.grosor(self.zoom)
     local version = (self.sim.estado.versionTerritorio or 0) .. ':' .. grosor
     local m = 2000
     local amplia = { x = vista.x - m, y = vista.y - m, w = vista.w + m * 2, h = vista.h + m * 2 }
     local dentro, fuera = {}, {}
+    local esperando = 0
     for _, c in ipairs(self.comarcas:visibles(amplia)) do
         for _, t in ipairs(c.trozos or {}) do
+            if t.firmaPedida and inicio - t.pedidoEn > ESPERA_TERRITORIO then
+                -- La respuesta no llegó: se vuelve a pedir.
+                t.firmaPedida, t.versionTerritorio = nil, nil
+            end
+            local ax, ay = t.tx * LADO, t.ty * LADO
+            local seVe = ax + LADO >= x0 and ax <= x1 and ay + LADO >= y0 and ay <= y1
             if t.versionTerritorio ~= version then
-                local ax, ay = t.tx * LADO, t.ty * LADO
-                if ax + LADO >= x0 and ax <= x1 and ay + LADO >= y0 and ay <= y1 then
+                if seVe then
                     dentro[#dentro + 1] = t
                 else
                     fuera[#fuera + 1] = t
                 end
+            elseif t.firmaPedida and seVe then
+                esperando = esperando + 1
             end
         end
     end
+    -- ¿Se queda esperando al hilo?
     local function rehacer(t)
         -- Solo se rehace si cambió alguna de sus celdas (o el grosor).
         local firma = Territorio.firma(self.sim, t) .. '|' .. grosor
-        if firma ~= t.firmaTerritorio then
-            if t.territorio then
-                t.territorio:release()
-            end
-            t.territorio = Territorio.mallaTrozo(self.sim, t, grosor)
-            t.firmaTerritorio = firma
+        if firma == t.firmaTerritorio then
+            -- Lo que se pidió antes ya no hace falta (volvió a como estaba).
+            t.firmaPedida = nil
+        elseif firma ~= t.firmaPedida then
+            self:pedirTerritorio(t, firma, grosor)
         end
         t.versionTerritorio = version
+        return t.firmaPedida ~= nil
     end
     local quedan = #dentro
     for _, t in ipairs(dentro) do
-        rehacer(t)
+        if rehacer(t) then
+            esperando = esperando + 1
+        end
         quedan = quedan - 1
         if love.timer.getTime() - inicio > limite then
-            return quedan
+            return quedan + esperando
         end
     end
     for k = 1, math.min(2, #fuera) do
         rehacer(fuera[k])
     end
-    return 0
+    return esperando
+end
+
+--- Pone la malla de territorio del trozo (suelta la que tenía).
+local function ponerTerritorio(t, malla, firma)
+    if t.territorio then
+        t.territorio:release()
+    end
+    t.territorio = malla
+    t.firmaTerritorio, t.firmaPedida = firma, nil
+end
+
+--- Pide a los hilos la malla de territorio del trozo con esta `firma`. Sin
+-- nada que pintar no hace falta el hilo, y sin hilos se hace aquí.
+function Mundo:pedirTerritorio(t, firma, grosor)
+    local p = Territorio.pedido(self.sim, t, grosor)
+    if not p then
+        ponerTerritorio(t, nil, firma)
+        return
+    end
+    if self.territorioSinHilos or not Territorio.arrancarHilos() then
+        local datos = Territorio.construir(p)
+        ponerTerritorio(t, datos and Territorio.malla(datos), firma)
+        return
+    end
+    p.canal = self.canalTerritorio
+    p.firma = firma
+    p.generacion = self.generacionTerritorio
+    Territorio.pedir(p)
+    t.firmaPedida = firma
+    t.pedidoEn = love.timer.getTime()
+end
+
+--- Las mallas de territorio que han terminado los hilos. Las que ya no hacen
+-- falta (el trozo se olvidó o se pidió otra después) se tiran.
+function Mundo:recibirTerritorio()
+    local canal = love.thread.getChannel(self.canalTerritorio)
+    local r = canal:pop()
+    while r do
+        local t = self.trozos[r.tx .. ',' .. r.ty]
+        local vale = t and r.generacion == self.generacionTerritorio and t.firmaPedida == r.firma
+        if r.error then
+            -- No debería pasar: se avisa y desde aquí se hace sin hilos.
+            print('Territorio: error en el hilo: ' .. r.error)
+            self.territorioSinHilos = true
+            if vale then
+                t.firmaPedida, t.versionTerritorio = nil, nil
+            end
+        elseif vale then
+            ponerTerritorio(t, r.datos and Territorio.malla(r.datos), r.firma)
+        elseif r.datos then
+            r.datos:release()
+        end
+        r = canal:pop()
+    end
 end
 
 -- Dibujo -------------------------------------------------------------------------------------
@@ -1301,8 +1426,8 @@ function Mundo:piezasLanzacohetes(piezas)
             sitios[#sitios + 1] = ciudad.datos
         end
     end
-    for _, id in ipairs(Simulacion.ordenadas(e.instalaciones)) do
-        local inst = e.instalaciones[id]
+    -- Sin orden: las piezas se ordenan por profundidad al dibujarlas.
+    for _, inst in pairs(e.instalaciones) do
         if inst.tipo == 'base' and self:dibujable(inst.x, inst.y) then
             sitios[#sitios + 1] = inst
         end

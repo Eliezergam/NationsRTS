@@ -325,8 +325,10 @@ MedirRobots.pilas = os.getenv('BATALLA_ROBOTS_MEDIR_PILAS') and (tonumber(os.get
 function MedirRobots:empezarPilas()
     local perfil = require('jit.profile')
     self.muestras, self.muestrasPrevio = {}, {}
-    perfil.start('fi2', function(hilo, cuantas)
-        local pila = perfil.dumpstack(hilo, 'pl;', 12)
+    -- Delante de cada pila, lo que hacía la máquina de Lua (`G`: el recolector
+    -- de basura; `N`, código compilado; `I`, interpretado; `C`, en C).
+    perfil.start('fi2', function(hilo, cuantas, estado)
+        local pila = '[' .. estado .. '] ' .. perfil.dumpstack(hilo, 'pl;', 12)
         self.muestras[pila] = (self.muestras[pila] or 0) + cuantas
     end)
 end

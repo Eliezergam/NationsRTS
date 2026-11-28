@@ -340,6 +340,32 @@ function Territorio:soltarBloque(sitio, nid)
     return sueltas
 end
 
+--- Firma de las celdas con dueño del rectángulo de celdas [cx0, cx1] x
+-- [cy0, cy1]: cambia si cambia el dueño de alguna. Como `celdasEn`, pero por
+-- tramos y sin una tabla ni un texto por celda (27-nov: con el territorio de
+-- una partida larga, rehacer las firmas de los trozos a la vista era lo más
+-- caro del mapa tras cada cambio de fronteras).
+function Territorio:firmaEn(cx0, cy0, cx1, cy1)
+    local e = self.estado
+    self:mapaTerritorio()
+    local partes = {}
+    for _, nid in ipairs(ordenadas(e.territorio)) do
+        local filas = e.territorio[nid]
+        for cy = cy0, cy1 do
+            local tramos = filas[cy]
+            if tramos then
+                for k = 1, #tramos, 2 do
+                    local a, b = math.max(cx0, tramos[k]), math.min(cx1, tramos[k + 1])
+                    if a <= b then
+                        partes[#partes + 1] = nid .. ':' .. cy .. ':' .. a .. '-' .. b
+                    end
+                end
+            end
+        end
+    end
+    return table.concat(partes, ';')
+end
+
 --- Celdas con dueño en el rectángulo de celdas [cx0, cx1] x [cy0, cy1], en
 -- orden fijo (por fila y, en cada fila, de izquierda a derecha):
 -- { {cx, cy, nacion}, ... }.
@@ -516,6 +542,7 @@ local publicas = {
     'cubre',
     'soltarBloque',
     'celdasEn',
+    'firmaEn',
     'celdasDe',
     'hayFrontera',
     'bloqueToca',

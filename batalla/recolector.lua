@@ -12,7 +12,15 @@
 -- lo vivo, el tope se cuadruplica, y si pasa de todo lo vivo (una carga que
 -- pide memoria a chorro) vuelve a trabajar también el automático, como
 -- siempre. Una vuelta nueva empieza cuando la memoria pasa de `pausa` veces
--- lo que quedó vivo en la anterior. Va en love.update: todas las escenas.
+-- lo que quedó vivo en la anterior. Va en love.update: todas las escenas,
+-- desde `desde` KB. En el mapa de campaña (20-45 MB vivos) también: el 27-nov
+-- el cierre de una vuelta del automático (su fase atómica, que no se parte)
+-- caía donde se pedía memoria, sobre todo al pedir comarcas, y daba cuadros
+-- de 20-35 ms; a pasos, en la partida del día 38 perdían el refresco de la
+-- pantalla de 157 Hz 115-135 cuadros de 3000 en vez de 149-160, y en una del
+-- día 1047, 286-324 en vez de 349-374. (Antes de los arreglos del mapa de
+-- ese día salía al revés: el paso añadía trabajo y por eso se usaba solo
+-- con más de 256 MB.)
 --
 -- RECOLECTOR_DEPURAR=1 apunta cada paso que tarde más de 10 ms y cada vuelta
 -- (líneas `RECOLECTOR`). Un paso no se puede partir, y el cierre de cada
@@ -23,10 +31,13 @@ local Recolector = {}
 Recolector.presupuesto = 0.002 -- s por cuadro
 Recolector.pausa = 1.5
 Recolector.trozo = 64 -- KB de trabajo por llamada
+Recolector.desde = 0 -- KB de memoria desde los que toma el mando
 Recolector.depurar = os.getenv('RECOLECTOR_DEPURAR') ~= nil
 -- true mientras alguien lo tiene parado a propósito (batalla/robots/medir.lua
 -- cuenta así la basura de cada cuadro).
 Recolector.parado = false
+-- RECOLECTOR=0 lo deja como venía (el automático de LuaJIT), para comparar.
+Recolector.activo = os.getenv('RECOLECTOR') ~= '0'
 
 -- KB vivos al acabar la última vuelta, si hay una a medias, KB de trabajo
 -- pendiente y la memoria al acabar el paso anterior.
@@ -39,10 +50,15 @@ local cuadros, tiempo, pico = 0, 0, 0
 
 --- Un cuadro de trabajo del recolector.
 function Recolector.paso()
-    if Recolector.parado then
+    if Recolector.parado or not Recolector.activo then
         return
     end
     local memoria = collectgarbage('count')
+    if not enVuelta and memoria < Recolector.desde then
+        -- Poca memoria: que siga el automático, como siempre.
+        vivo, ultima = nil, nil
+        return
+    end
     vivo = vivo or memoria
     -- Entre un paso y otro no se libera nada: lo que ha subido es lo pedido.
     if enVuelta and ultima and memoria > ultima then

@@ -3,7 +3,8 @@
 --
 -- Lee pedidos del canal `mundo.pedidos` y deja cada comarca en
 -- `mundo.hechos`. Un pedido es { mundo, semilla, cx, cy, obras } (o, con
--- `zona`, los datos de la nación { zx, zy } para la simulación). Con
+-- `zona`, los datos de la nación { zx, zy } para la simulación, y sus
+-- ciudades candidatas y capitales para las cachés del mundo). Con
 -- `archivo`, la comarca se lee de la caché en disco si está y si no se guarda
 -- ahí al generarla si `guardar` (`firma`: las obras con que se hizo). Con
 -- `asegurar` (precarga), solo se comprueba que esté en el disco y, si no, se
@@ -17,6 +18,7 @@ require('love.data')
 require('love.timer')
 
 local Generador = require('mundo.generador')
+local Ciudades = require('mundo.ciudades')
 
 local pedidos = love.thread.getChannel('mundo.pedidos')
 local hechos = love.thread.getChannel('mundo.hechos')
@@ -42,6 +44,26 @@ local function comarca(p)
         datos:release()
     end
     return r
+end
+
+--- Las candidatas a ciudad y las capitales de las regiones de la zona, como
+-- quedaron en la caché de este hilo al sacar sus datos (`Mundo:sembrarZona`
+-- las pone en las del mundo).
+local function ciudadesZona(ctx, zx, zy)
+    local porNacion = Ciudades.porNacion
+    local candidatas, capitales = {}, {}
+    for ry = zy * porNacion, zy * porNacion + porNacion - 1 do
+        for rx = zx * porNacion, zx * porNacion + porNacion - 1 do
+            local k = rx .. ',' .. ry
+            local candidata = ctx.ciudades.regiones[k]
+            local capital = ctx.ciudades.capitales[k]
+            if candidata ~= nil and capital ~= nil then
+                candidatas[k] = candidata
+                capitales[k] = capital and true or false
+            end
+        end
+    end
+    return { candidatas = candidatas, capitales = capitales }
 end
 
 while true do
@@ -78,8 +100,10 @@ while true do
             return hecho
         end)
     elseif p.zona then
-        ok, r = pcall(Generador.datosZona, contexto, p.zx, p.zy)
-        r = ok and { mundo = p.mundo, zona = true, zx = p.zx, zy = p.zy, datos = r } or r
+        ok, r = pcall(function()
+            local datos = Generador.datosZona(contexto, p.zx, p.zy)
+            return { zona = true, zx = p.zx, zy = p.zy, datos = datos, ciudades = ciudadesZona(contexto, p.zx, p.zy) }
+        end)
     else
         ok, r = pcall(comarca, p)
     end

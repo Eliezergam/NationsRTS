@@ -547,6 +547,140 @@ function love.load(arg)
     if yaEsta['--medir'] then
         medicion = { inicio = love.timer.getTime(), cuadros = {}, generar = {}, conHuecos = 0, maxHuecos = 0 }
         love.window.setVSync(0)
+        -- Reloj de pared de cada cuadro: actualizar, dibujar y entregar a la
+        -- tarjeta (present: si espera a la GPU, ahí se ve).
+        local ahora = love.timer.getTime
+        local actualizar, dibujar, presentar = love.update, love.draw, love.graphics.present
+        medicion.partesCuadro = { actualizar = 0, dibujar = 0, entregar = 0 }
+        -- Memoria que se liberó en el cuadro (el recolector cerró una vuelta).
+        local memoria = collectgarbage('count')
+        medicion.liberado = 0
+        local function mirarMemoria()
+            local ahoraKB = collectgarbage('count')
+            if ahoraKB < memoria then
+                medicion.liberado = medicion.liberado + memoria - ahoraKB
+            end
+            memoria = ahoraKB
+        end
+        function love.update(...)
+            mirarMemoria()
+            medicion.liberadoCuadro = medicion.liberado
+            medicion.liberado = 0
+            local t0 = ahora()
+            actualizar(...)
+            medicion.msActualizar = (ahora() - t0) * 1000
+            mirarMemoria()
+        end
+        function love.draw(...)
+            local t0 = ahora()
+            dibujar(...)
+            medicion.msDibujar = (ahora() - t0) * 1000
+            mirarMemoria()
+        end
+        function love.graphics.present(...)
+            local t0 = ahora()
+            presentar(...)
+            medicion.msEntregar = (ahora() - t0) * 1000
+        end
+        -- MEDIR_MAPA=1: lo que tardan las partes del mapa (líneas `MEDIR_MAPA`).
+        if os.getenv('MEDIR_MAPA') then
+            local partes = {}
+            medicion.partesMapa = partes
+            local function medirFuncion(tabla, nombre, clave)
+                local original = tabla[nombre]
+                local p = { total = 0, veces = 0, peor = 0 }
+                partes[clave] = p
+                p.cuadro = 0
+                tabla[nombre] = function(...)
+                    local t0 = love.timer.getTime()
+                    local a, b, c, d = original(...)
+                    local ms = (love.timer.getTime() - t0) * 1000
+                    p.total, p.veces, p.peor = p.total + ms, p.veces + 1, math.max(p.peor, ms)
+                    p.cuadro = p.cuadro + ms
+                    p.vecesCuadro = (p.vecesCuadro or 0) + 1
+                    return a, b, c, d
+                end
+            end
+            medirFuncion(require('interfaz.ejercito'), 'actualizar', 'Ejercito.actualizar')
+            medirFuncion(require('mundo.simulacion'), 'avanzarPaso', 'Simulacion.avanzarPaso')
+            medirFuncion(require('mundo.ciudades'), 'actualizar', 'Ciudades.actualizar')
+            local ComarcasMapa = require('mundo.comarcas')
+            for _, nombre in ipairs({ 'recibir', 'actualizar', 'detalle', 'instalar', 'detallar', 'soltarMallas', 'pedir',
+                'obras', 'descartar', 'avanzarPrecarga', 'pedirZonas' }) do
+                medirFuncion(ComarcasMapa, nombre, 'Comarcas.' .. nombre)
+            end
+            for _, nombre in ipairs({ 'cercanas', 'deRegion', 'construir' }) do
+                medirFuncion(require('mundo.ciudades'), nombre, 'Ciudades.' .. nombre)
+            end
+            medirFuncion(require('mundo.recursos'), 'deRegion', 'Recursos.deRegion')
+            for _, nombre in ipairs({ 'explorarComarca', 'explorarTrozo', 'olvidarComarca', 'registrarNacionDe',
+                'comarcasFijas' }) do
+                medirFuncion(Mundo, nombre, 'Mundo.' .. nombre)
+            end
+            -- Sucesos del compilador JIT: trazas hechas, abortadas y vaciados
+            -- (todo lo compilado se tira al llegar a `maxtrace` o `maxmcode`).
+            local jitCuadro = { stop = 0, abort = 0, flush = 0 }
+            local jitTotal = { stop = 0, abort = 0, flush = 0 }
+            medicion.jitCuadro, medicion.jitTotal = jitCuadro, jitTotal
+            jit.attach(function(que)
+                if jitCuadro[que] then
+                    jitCuadro[que] = jitCuadro[que] + 1
+                    jitTotal[que] = jitTotal[que] + 1
+                end
+            end, 'trace')
+            -- CPU que gasta de verdad el hilo principal, cuántas veces lo saca
+            -- el sistema a la fuerza y las faltas de página que van al disco.
+            local ffi = require('ffi')
+            pcall(ffi.cdef, [[
+                struct MedirTiempo { long segundos; long micros; };
+                struct MedirUso {
+                    struct MedirTiempo usuario, sistema;
+                    long maxrss, ixrss, idrss, isrss, minflt, majflt, nswap, inblock, oublock;
+                    long msgsnd, msgrcv, nsignals, nvcsw, nivcsw;
+                };
+                int getrusage(int quien, struct MedirUso *uso);
+            ]])
+            local uso = ffi.new('struct MedirUso')
+            function medicion.usoHilo()
+                ffi.C.getrusage(1, uso) -- RUSAGE_THREAD
+                local cpu = tonumber(uso.usuario.segundos + uso.sistema.segundos) * 1000
+                    + tonumber(uso.usuario.micros + uso.sistema.micros) / 1000
+                return cpu, tonumber(uso.nivcsw), tonumber(uso.majflt)
+            end
+            medicion.usoAntes = { medicion.usoHilo() }
+            local TerritorioMapa = require('mundo.territorio')
+            for _, nombre in ipairs({ 'mallaTrozo', 'firma', 'pedido', 'construir', 'malla' }) do
+                medirFuncion(TerritorioMapa, nombre, 'Territorio.' .. nombre)
+            end
+            for _, nombre in ipairs({ 'actualizar', 'dibujar', 'repintarTerritorio', 'recibirTerritorio',
+                'pedirTerritorio', 'fichasGrupos', 'generar', 'apartarPlantas', 'dibujarObjetosCerca' }) do
+                medirFuncion(Mundo, nombre, 'Mundo.' .. nombre)
+            end
+        end
+        -- MEDIR_DIA=1: lo que tarda cada parte del principio y el final del
+        -- día de la simulación (líneas `MEDIR_DIA` en el resumen).
+        if os.getenv('MEDIR_DIA') then
+            local partes = {}
+            medicion.partesDia = partes
+            for _, nombre in ipairs({ 'empezarDia', 'terminarDia', 'moverPaso', 'mermar', 'producirRecursos', 'economia',
+                'atenderHambre', 'planearMejoras', 'planearProduccion', 'protegerCiudades', 'protegerBases', 'expansion',
+                'planearRecoleccion', 'defenderLoSuyo', 'obras', 'diplomacia', 'guerra', 'llegadasDelDia',
+                'resolverBatallas', 'asaltarTrasChoque', 'recolectarDia', 'diaAviones', 'revisarBanderas', 'recuperar',
+                'planearAbastos', 'avisarMunicion', 'liberarLideres', 'olvidarInformes', 'llegadaExploradores' }) do
+                local original = Simulacion[nombre]
+                if original then
+                    local p = { total = 0, veces = 0, peor = 0 }
+                    partes[nombre] = p
+                    Simulacion[nombre] = function(...)
+                        local t0 = love.timer.getTime()
+                        local a, b, c, d = original(...)
+                        local ms = (love.timer.getTime() - t0) * 1000
+                        p.total, p.veces, p.peor = p.total + ms, p.veces + 1, math.max(p.peor, ms)
+                        return a, b, c, d
+                    end
+                end
+            end
+        end
     end
     -- Ajustes del jugador (interfaz/ajustes.lua): antes de leer los
     -- argumentos, para que `--calidad` gane sobre el archivo.
@@ -1096,6 +1230,69 @@ local function medirCuadro()
     end
     m.cuadros[#m.cuadros + 1] = love.timer.getDelta() * 1000
     m.generar[#m.generar + 1] = mundo.msGenerar or 0
+    local partes = m.partesCuadro
+    partes.actualizar = partes.actualizar + (m.msActualizar or 0)
+    partes.dibujar = partes.dibujar + (m.msDibujar or 0)
+    partes.entregar = partes.entregar + (m.msEntregar or 0)
+    if m.usoHilo then
+        local cpu, forzados, faltas = m.usoHilo()
+        local a = m.usoAntes
+        m.usoCuadro = { cpu - a[1], forzados - a[2], faltas - a[3] }
+        m.usoAntes = { cpu, forzados, faltas }
+    end
+    if love.timer.getDelta() > 0.03 then
+        -- Las partes medidas (MEDIR_MAPA) de más de 1 ms en ese cuadro.
+        local detalle = {}
+        for clave, p in pairs(m.partesMapa or {}) do
+            if p.cuadro > 1 then
+                detalle[#detalle + 1] = string.format('%s %.1f (%d)', clave, p.cuadro, p.vecesCuadro or 0)
+            end
+        end
+        table.sort(detalle)
+        if m.usoCuadro then
+            local u = m.usoCuadro
+            table.insert(detalle, 1, string.format('CPU del hilo %.1f ms, sacado %d veces, faltas al disco %d', u[1], u[2], u[3]))
+        end
+        local j = m.jitCuadro
+        if j then
+            table.insert(detalle, 1, string.format('JIT trazas %d, abortos %d, vaciados %d', j.stop, j.abort, j.flush))
+        end
+        print(string.format('MEDIR cuadro lento de %.0f ms a los %.1f s (día %s): actualizar %.1f, dibujar %.1f, entregar %.1f ms; liberó %.1f MB; %s',
+            love.timer.getDelta() * 1000, love.timer.getTime() - m.inicio, tostring(mundo.sim.estado.dia),
+            m.msActualizar or 0, m.msDibujar or 0, m.msEntregar or 0, (m.liberadoCuadro or 0) / 1024,
+            table.concat(detalle, ', ')))
+    end
+    for _, p in pairs(m.partesMapa or {}) do
+        p.cuadro, p.vecesCuadro = 0, 0
+    end
+    if m.jitCuadro then
+        m.jitCuadro.stop, m.jitCuadro.abort, m.jitCuadro.flush = 0, 0, 0
+    end
+    -- MEDIR_PILAS=<ms>: las pilas de llamadas de los 12 primeros cuadros de
+    -- más de <ms> ms (el perfilador de batalla/robots/medir.lua).
+    local umbral = tonumber(os.getenv('MEDIR_PILAS') or '')
+    if umbral then
+        local p = m.pilas
+        if not p then
+            p = setmetatable({ reloj = 0 }, require('batalla.robots.medir'))
+            p:empezarPilas()
+            m.pilas = p
+        else
+            -- Para el resumen: por las 4 llamadas de arriba de cada pila.
+            m.pilasTotal = m.pilasTotal or {}
+            for pila, n in pairs(p.muestras) do
+                local corta = pila:match('^([^;]*;?[^;]*;?[^;]*;?[^;]*)') or pila
+                m.pilasTotal[corta] = (m.pilasTotal[corta] or 0) + n
+            end
+            -- Las muestras desde el cuadro anterior: las del cuadro que acaba.
+            p.muestrasPrevio, p.muestras = p.muestras, {}
+            p.reloj = love.timer.getTime() - m.inicio
+            if love.timer.getDelta() * 1000 > umbral and (m.pilasVistas or 0) < 12 then
+                m.pilasVistas = (m.pilasVistas or 0) + 1
+                p:imprimirPilas(love.timer.getDelta())
+            end
+        end
+    end
     local huecos = mundo:huecos(vistaActual())
     if huecos > 0 then
         m.conHuecos = m.conHuecos + 1
@@ -1141,6 +1338,67 @@ local function imprimirMedicion()
         )
     )
     print(string.format('MEDIR generar: media %.2f ms, 1%% peor %.2f ms, max %.2f ms', gMedia, gPeor, gMax))
+    local n = math.max(1, #m.cuadros)
+    print(string.format('MEDIR por cuadro: actualizar %.2f ms, dibujar %.2f ms, entregar a la tarjeta %.2f ms',
+        m.partesCuadro.actualizar / n, m.partesCuadro.dibujar / n, m.partesCuadro.entregar / n))
+    if m.jitTotal then
+        print(string.format('MEDIR_MAPA JIT en toda la partida: %d trazas, %d abortos, %d vaciados', m.jitTotal.stop,
+            m.jitTotal.abort, m.jitTotal.flush))
+    end
+    if m.partesMapa then
+        local n = math.max(1, #m.cuadros)
+        for clave, p in pairs(m.partesMapa) do
+            if p.veces > 0 then
+                print(string.format('MEDIR_MAPA %-26s %6.3f ms por cuadro; %6.3f ms por llamada, peor %6.2f ms (%d llamadas)',
+                    clave, p.total / n, p.total / p.veces, p.peor, p.veces))
+            end
+        end
+    end
+    if m.partesDia then
+        local orden = {}
+        for nombre in pairs(m.partesDia) do
+            orden[#orden + 1] = nombre
+        end
+        table.sort(orden, function(a, b)
+            return m.partesDia[a].total > m.partesDia[b].total
+        end)
+        local dias = math.max(1, m.partesDia.empezarDia.veces)
+        for _, nombre in ipairs(orden) do
+            local p = m.partesDia[nombre]
+            if p.veces > 0 then
+                print(string.format('MEDIR_DIA %-20s %7.2f ms por día, peor llamada %6.2f ms (%d llamadas en %d días)',
+                    nombre, p.total / dias, p.peor, p.veces, dias))
+            end
+        end
+    end
+    if m.pilasTotal then
+        local orden, total = {}, 0
+        for pila, n in pairs(m.pilasTotal) do
+            orden[#orden + 1] = pila
+            total = total + n
+        end
+        table.sort(orden, function(a, b)
+            return m.pilasTotal[a] > m.pilasTotal[b]
+        end)
+        print(string.format('MEDIR_PILAS en toda la medida: %d muestras', total))
+        for k = 1, math.min(20, #orden) do
+            print(string.format('MEDIR_PILAS total %5.1f %%  %s', 100 * m.pilasTotal[orden[k]] / total, orden[k]))
+        end
+    end
+    -- Lo que se nota: los cuadros que pierden un refresco de la pantalla.
+    local hz = select(3, love.window.getMode()).refreshrate
+    hz = (hz and hz > 0) and hz or 60
+    local pierden, de17 = 0, 0
+    for _, v in ipairs(m.cuadros) do
+        if v > 1000 / hz + 0.5 then
+            pierden = pierden + 1
+        end
+        if v > 1000 / 60 then
+            de17 = de17 + 1
+        end
+    end
+    print(string.format('MEDIR cuadros que pierden un refresco de la pantalla (%d Hz): %d de %d; de más de 16,7 ms: %d',
+        hz, pierden, #m.cuadros, de17))
     print(string.format('MEDIR cuadros con huecos a la vista %d (max %d trozos)', m.conHuecos, m.maxHuecos))
     local comarcas, listas = mundo.comarcas, 0
     local md = comarcas and comarcas.medidas
