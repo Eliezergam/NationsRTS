@@ -55,7 +55,7 @@ local grupoEnCamino = Ayudas.grupoEnCamino
 local Simulacion = {}
 Simulacion.__index = Simulacion
 
-Simulacion.version = 31 -- 4: rutas por tierra; 5: granero; 6: niveles; 7: dinero por ciudad; 8: colores de país;
+Simulacion.version = 32 -- 4: rutas por tierra; 5: granero; 6: niveles; 7: dinero por ciudad; 8: colores de país;
 -- 9: mapa a escala (las ciudades cambian de sitio: las partidas anteriores no sirven)
 -- 10: sin rutas ni carreteras (los grupos aparecen donde van);
 -- 11: solo capitales; los campamentos producen (las partidas anteriores no sirven)
@@ -106,6 +106,8 @@ Simulacion.version = 31 -- 4: rutas por tierra; 5: granero; 6: niveles; 7: diner
 --     costaron y la tecnología de los tanques sale de la fila (guardado.lua, `sinTanques`)
 -- 31: aviones de transporte (mundo/simulacion/aviones.lua): todo viaje va en avión (`e.aviones`,
 --     `e.vuelos`, `g.vuelo`, `c.obraAviones`); sin choques en campo abierto
+-- 32: territorio de ciudades y campamentos en bloques de bandera alineados a su rejilla
+--     (territorio.lua: bloqueAlineado); al cargar una v31 se rehace (`alinearTerritorio`)
 Simulacion.Averias = Averias
 Simulacion.maxNoticias = 60
 
@@ -398,9 +400,11 @@ Simulacion.campamento = {
 -- del propio.
 Simulacion.celda = 500
 Simulacion.bloques = {
-    ciudad = 20, -- 500 m alrededor de la torre
-    bandera = 6, -- 150 m alrededor
-    campamento = 12, -- 300 m alrededor, como su alcance de antes
+    -- En bloques de bandera enteros, alineados a su rejilla (territorio.lua:
+    -- bloqueAlineado; el dueño, 26-nov).
+    ciudad = 18, -- 3 x 3 bloques de bandera (9 km)
+    bandera = 6, -- 3 km
+    campamento = 12, -- 2 x 2 bloques de bandera (6 km)
 }
 
 -- Medio lado del bloque de cada tipo de instalación (px de mundo).

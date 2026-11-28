@@ -692,6 +692,12 @@ local function migrar(estado)
         end
         estado.version = 31
     end
+    if estado.version == 31 then
+        -- Territorio de ciudades y campamentos alineado a la rejilla de las
+        -- banderas (territorio.lua): se rehace al cargar, con la simulación.
+        estado.alinearTerritorio = true
+        estado.version = 32
+    end
 end
 
 --- Simulación con el estado del texto `texto` (de `guardar`), migrado si es de una
@@ -726,6 +732,10 @@ function Guardado.desdeEstado(estado, opciones)
     self.cambios = 1
     if not self:rehacerYacimientos(opciones and opciones.datosZona) then
         return nil, 'faltan los yacimientos: cargar necesita opciones.datosZona'
+    end
+    if estado.alinearTerritorio then
+        estado.alinearTerritorio = nil
+        self:alinearTerritorio()
     end
     return self
 end

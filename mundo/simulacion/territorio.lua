@@ -38,6 +38,25 @@ function Territorio.bloque(x, y, lado)
     return vx - medio, vy - medio, vx - medio + lado - 1, vy - medio + lado - 1
 end
 
+--- Bloque de `lado` celdas hecho de bloques de bandera enteros, alineado a
+-- su rejilla (el dueño, 26-nov: «el territorio de la ciudad debe formarse
+-- por el cuadrado de muchas banderas», para que una bandera plantada al lado
+-- se pegue a él y no quede montada encima). Con un número impar de bloques,
+-- centrado en el bloque que contiene (x, y); con uno par, en el vértice de la
+-- rejilla de bloques más cercano. Devuelve cx0, cy0, cx1, cy1.
+function Territorio.bloqueAlineado(x, y, lado)
+    local L = Simulacion.bloques.bandera
+    local n = math.max(1, math.floor(lado / L + 0.5))
+    local fx, fy = x / CELDA / L, y / CELDA / L
+    local bx0, by0
+    if n % 2 == 1 then
+        bx0, by0 = math.floor(fx) - (n - 1) / 2, math.floor(fy) - (n - 1) / 2
+    else
+        bx0, by0 = math.floor(fx + 0.5) - n / 2, math.floor(fy + 0.5) - n / 2
+    end
+    return bx0 * L, by0 * L, (bx0 + n) * L - 1, (by0 + n) * L - 1
+end
+
 --- Lado del bloque que da un sitio (celdas), o nil: una ciudad siempre; una
 -- instalación, del tipo que da territorio (terminada o no).
 local function ladoBloque(sitio)
@@ -52,7 +71,7 @@ function Territorio.bloqueDe(sitio)
     if not esCiudad(sitio) and not Simulacion.daTerritorio(sitio) then
         return nil
     end
-    return Simulacion.bloque(sitio.x, sitio.y, ladoBloque(sitio))
+    return Territorio.bloqueAlineado(sitio.x, sitio.y, ladoBloque(sitio))
 end
 
 --- Mete la celda cx en la fila `cy` de `filas`, uniendo los tramos que se tocan.
@@ -319,7 +338,7 @@ function Territorio:soltarBloque(sitio, nid)
     if not lado then
         return 0
     end
-    local cx0, cy0, cx1, cy1 = Simulacion.bloque(sitio.x, sitio.y, lado)
+    local cx0, cy0, cx1, cy1 = Territorio.bloqueAlineado(sitio.x, sitio.y, lado)
     local sueltas = 0
     for cy = cy0, cy1 do
         for cx = cx0, cx1 do
@@ -530,7 +549,48 @@ function Territorio:tocaTrozo(nid, sitio)
     return false
 end
 
+--- Partidas de antes del 26-nov (v31): los bloques de las ciudades y de los
+-- campamentos eran cuadrados centrados en ellos (20 y 12 celdas) y no
+-- casaban con la rejilla de las banderas. Suelta lo de cada bloque viejo que
+-- no cubre ya ningún bloque nuevo y toma lo libre del nuevo.
+function Territorio:alinearTerritorio()
+    local viejos = { ciudad = 20, campamento = 12 }
+    local sitios = {}
+    for _, id in ipairs(ordenadas(self.estado.ciudades)) do
+        sitios[#sitios + 1] = self.estado.ciudades[id]
+    end
+    for _, id in ipairs(ordenadas(self.estado.instalaciones)) do
+        local i = self.estado.instalaciones[id]
+        if Simulacion.daTerritorio(i) then
+            sitios[#sitios + 1] = i
+        end
+    end
+    for _, sitio in ipairs(sitios) do
+        local lado = esCiudad(sitio) and viejos.ciudad or viejos[sitio.tipo]
+        local nid = sitio.nacion
+        if lado and nid then
+            local cx0, cy0, cx1, cy1 = Territorio.bloque(sitio.x, sitio.y, lado)
+            for cy = cy0, cy1 do
+                for cx = cx0, cx1 do
+                    if self:duenoCelda(cx, cy) == nid and not self:cubre(nid, cx, cy) then
+                        self:ponerCelda(cx, cy, nil)
+                    end
+                end
+            end
+            self:bloqueSitioCambiado(cx0, cy0, cx1, cy1, nid)
+        end
+    end
+    for _, sitio in ipairs(sitios) do
+        if sitio.nacion then
+            self:reclamarBloque(sitio)
+        end
+    end
+    self:territorioCambiado()
+end
+
 local publicas = {
+    'alinearTerritorio',
+    'bloqueAlineado',
     'celdaDe',
     'bloque',
     'bloqueDe',
