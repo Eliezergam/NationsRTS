@@ -450,6 +450,27 @@ function Plano:estorbaPlanta(x, y)
     return self:ocupado(x, y, 8) or (self.vias ~= nil and self.vias:sobre(x, y, 5))
 end
 
+--- ¿Estorba un árbol en (x, y) dentro del recinto? Edificios, patios y muro
+-- (con 6 m de más), calles y aceras (4 m de más) y la franja del aeródromo:
+-- la pista con su explanada y la plataforma de los aviones al norte. Lo
+-- demás del recinto lleva árboles como el campo (el dueño, 27-nov).
+function Plano:estorbaArbol(x, y)
+    if self:ocupado(x, y, 60) or (self.vias ~= nil and self.vias:sobre(x, y, 40)) then
+        return true
+    end
+    local p = self.pista
+    if p then
+        local A = Plano.aerodromo
+        local largo = A.medioLargo * 10 + 600
+        local norte = A.plataforma.hasta * 10 + 150
+        local sur = A.medioAncho + A.talud
+        if math.abs(x - p.x) < largo and y > p.y - norte and y < p.y + sur then
+            return true
+        end
+    end
+    return false
+end
+
 --- ¿Está (x, y) dentro del recinto del sitio (con `margen` px de más)?
 function Plano:dentro(x, y, margen)
     local r = self.recinto

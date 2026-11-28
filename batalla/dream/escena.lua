@@ -1038,113 +1038,126 @@ function EscenaDream:ponerRobots()
             end
         end
     end
-    local r = RobotsBatalla.crear('lanzamisilesCerebro', self.suelo, x, y, haciaEnemigo)
-    r.datos.asalto.bando, r.datos.asalto.nombre = 'rojo', 'ROJO'
-    local guardias = {}
-    if guardia then
-        local rc = plano.recinto
-        local cx, cy = (rc[1] + rc[3]) / 20, -(rc[2] + rc[4]) / 20
-        local radio = math.sqrt((rc[3] - rc[1]) ^ 2 + (rc[4] - rc[2]) ^ 2) / 20
-        local suelo = self.suelo
-        local function dentro(mx, my)
-            local px, py = mx * 10, -my * 10
-            return px > rc[1] + 150 and px < rc[3] - 150 and py > rc[2] + 150 and py < rc[4] - 150
-                and not suelo:ocupado(px, py, 60)
-        end
-        -- Varios robots que se reparten el recinto entero (el dueño,
-        -- 27-nov: «que cubran toda la zona»): cuántos, según lo que mide;
-        -- salen repartidos y cada uno va a donde lleva más rato sin
-        -- mirar nadie (batalla/robots/patrulla.lua).
-        local patrulla = Patrulla.nueva(rc[1] / 10, -rc[4] / 10, rc[3] / 10, -rc[2] / 10, function(mx, my)
-            return dentro(mx, my) and suelo:transitable(mx * 10, -my * 10)
-                and not suelo:plantaCerca(mx * 10, -my * 10, 25, true)
-        end)
-        self.patrulla = patrulla
-        local n = patrulla:robots()
-        local salidas = patrulla:salidas(n, r.x, r.y)
-        local opciones = { minimo = 25, maximo = 160, dentro = dentro, patrulla = patrulla }
-        -- `BATALLA_GUERRA=<n>` (pruebas de rendimiento): dos equipos de n
-        -- robots, soldados y lanzamisiles mezclados; los rojos salen de la
-        -- mitad sur del recinto y los azules de la norte, y cada equipo
-        -- patrulla el recinto entero, así que se encuentran y se disparan.
-        local guerra = tonumber(os.getenv('BATALLA_GUERRA') or '')
-        local equipos = { { bando = 'rojo', nombre = 'ROJO', patrulla = patrulla, opciones = opciones, salidas = salidas } }
-        if guerra then
-            local medio = -(rc[2] + rc[4]) / 20
-            local azul = Patrulla.nueva(rc[1] / 10, -rc[4] / 10, rc[3] / 10, -rc[2] / 10, function(mx, my)
-                return dentro(mx, my) and suelo:transitable(mx * 10, -my * 10)
-                    and not suelo:plantaCerca(mx * 10, -my * 10, 25, true)
-            end)
-            equipos[1].salidas = patrulla:salidas(guerra, r.x, r.y, function(c)
-                return c.y < medio
-            end)
-            equipos[2] = {
-                bando = 'azul', nombre = 'AZUL', patrulla = azul,
-                opciones = { minimo = 25, maximo = 160, dentro = dentro, patrulla = azul },
-                salidas = azul:salidas(guerra, r.x, -rc[2] / 10, function(c)
-                    return c.y > medio
-                end),
-            }
-        end
-        r:setRecorrer('rojo', cx, cy, radio, 'ROJO', opciones)
-        for _, equipo in ipairs(equipos) do
-            local primero = equipo.bando == 'rojo' and 2 or 1
-            for k = primero, #equipo.salidas do
-                local s = equipo.salidas[k]
-                local tipo = 'lanzamisilesCerebro'
-                if guerra and k % 2 == 0 then
-                    tipo = 'soldadoAsalto'
-                end
-                local o = RobotsBatalla.crear(tipo, suelo, s.x * 10, -s.y * 10, haciaEnemigo)
-                local nombre = equipo.nombre .. k
-                o.datos.asalto.bando, o.datos.asalto.nombre = equipo.bando, nombre
-                o:setRecorrer(equipo.bando, cx, cy, radio, nombre, equipo.opciones)
-                guardias[#guardias + 1] = o
-            end
-        end
-        print(string.format('GUARDIA: %d robots en la mina (%d equipos), recinto de %.0f x %.0f m, %d celdas de patrulla',
-            #guardias + 1, #equipos, (rc[3] - rc[1]) / 10, (rc[4] - rc[2]) / 10, #patrulla.celdas))
-        -- Sin zonas de despliegue ni contador: aquí no hay tropas que
-        -- colocar, y la guardia dura hasta salir con Esc.
+    -- De visita (entrar a mirar una ciudad o una mina desde el mapa): sin
+    -- robots de pelea ni zonas; solo el sitio, su aeródromo y los aviones.
+    local visita = combate.visita
+    if visita then
         self.sinZonas = true
-        self.guardia = true
+        self.visita = true
         if self.despliegue then
             self.despliegue.restante = math.huge
         end
     end
-    -- Su memoria aprendida (cerebro.lua, paso 2): la suya, y la rama de este
-    -- mapa (semilla y sitio del combate).
-    r.idMemoria = 'ROJO'
-    r.mapaMemoria = string.format('semilla%d_%d_%d', self.suelo.terreno.semilla or 0, math.floor(combate.cx / 1000), math.floor(combate.cy / 1000))
-    self.robotsAsalto = { r }
-    for _, o in ipairs(guardias) do
-        o.idMemoria = o.datos.asalto.nombre
-        o.mapaMemoria = r.mapaMemoria
-        self.robotsAsalto[#self.robotsAsalto + 1] = o
+    local r
+    if not visita then
+        r = RobotsBatalla.crear('lanzamisilesCerebro', self.suelo, x, y, haciaEnemigo)
+        r.datos.asalto.bando, r.datos.asalto.nombre = 'rojo', 'ROJO'
+        local guardias = {}
+        if guardia then
+            local rc = plano.recinto
+            local cx, cy = (rc[1] + rc[3]) / 20, -(rc[2] + rc[4]) / 20
+            local radio = math.sqrt((rc[3] - rc[1]) ^ 2 + (rc[4] - rc[2]) ^ 2) / 20
+            local suelo = self.suelo
+            local function dentro(mx, my)
+                local px, py = mx * 10, -my * 10
+                return px > rc[1] + 150 and px < rc[3] - 150 and py > rc[2] + 150 and py < rc[4] - 150
+                    and not suelo:ocupado(px, py, 60)
+            end
+            -- Varios robots que se reparten el recinto entero (el dueño,
+            -- 27-nov: «que cubran toda la zona»): cuántos, según lo que mide;
+            -- salen repartidos y cada uno va a donde lleva más rato sin
+            -- mirar nadie (batalla/robots/patrulla.lua).
+            local patrulla = Patrulla.nueva(rc[1] / 10, -rc[4] / 10, rc[3] / 10, -rc[2] / 10, function(mx, my)
+                return dentro(mx, my) and suelo:transitable(mx * 10, -my * 10)
+                    and not suelo:plantaCerca(mx * 10, -my * 10, 25, true)
+            end)
+            self.patrulla = patrulla
+            local n = patrulla:robots()
+            local salidas = patrulla:salidas(n, r.x, r.y)
+            local opciones = { minimo = 25, maximo = 160, dentro = dentro, patrulla = patrulla }
+            -- `BATALLA_GUERRA=<n>` (pruebas de rendimiento): dos equipos de n
+            -- robots, soldados y lanzamisiles mezclados; los rojos salen de la
+            -- mitad sur del recinto y los azules de la norte, y cada equipo
+            -- patrulla el recinto entero, así que se encuentran y se disparan.
+            local guerra = tonumber(os.getenv('BATALLA_GUERRA') or '')
+            local equipos = { { bando = 'rojo', nombre = 'ROJO', patrulla = patrulla, opciones = opciones, salidas = salidas } }
+            if guerra then
+                local medio = -(rc[2] + rc[4]) / 20
+                local azul = Patrulla.nueva(rc[1] / 10, -rc[4] / 10, rc[3] / 10, -rc[2] / 10, function(mx, my)
+                    return dentro(mx, my) and suelo:transitable(mx * 10, -my * 10)
+                        and not suelo:plantaCerca(mx * 10, -my * 10, 25, true)
+                end)
+                equipos[1].salidas = patrulla:salidas(guerra, r.x, r.y, function(c)
+                    return c.y < medio
+                end)
+                equipos[2] = {
+                    bando = 'azul', nombre = 'AZUL', patrulla = azul,
+                    opciones = { minimo = 25, maximo = 160, dentro = dentro, patrulla = azul },
+                    salidas = azul:salidas(guerra, r.x, -rc[2] / 10, function(c)
+                        return c.y > medio
+                    end),
+                }
+            end
+            r:setRecorrer('rojo', cx, cy, radio, 'ROJO', opciones)
+            for _, equipo in ipairs(equipos) do
+                local primero = equipo.bando == 'rojo' and 2 or 1
+                for k = primero, #equipo.salidas do
+                    local s = equipo.salidas[k]
+                    local tipo = 'lanzamisilesCerebro'
+                    if guerra and k % 2 == 0 then
+                        tipo = 'soldadoAsalto'
+                    end
+                    local o = RobotsBatalla.crear(tipo, suelo, s.x * 10, -s.y * 10, haciaEnemigo)
+                    local nombre = equipo.nombre .. k
+                    o.datos.asalto.bando, o.datos.asalto.nombre = equipo.bando, nombre
+                    o:setRecorrer(equipo.bando, cx, cy, radio, nombre, equipo.opciones)
+                    guardias[#guardias + 1] = o
+                end
+            end
+            print(string.format('GUARDIA: %d robots en la mina (%d equipos), recinto de %.0f x %.0f m, %d celdas de patrulla',
+                #guardias + 1, #equipos, (rc[3] - rc[1]) / 10, (rc[4] - rc[2]) / 10, #patrulla.celdas))
+            -- Sin zonas de despliegue ni contador: aquí no hay tropas que
+            -- colocar, y la guardia dura hasta salir con Esc.
+            self.sinZonas = true
+            self.guardia = true
+            if self.despliegue then
+                self.despliegue.restante = math.huge
+            end
+        end
+        -- Su memoria aprendida (cerebro.lua, paso 2): la suya, y la rama de este
+        -- mapa (semilla y sitio del combate).
+        r.idMemoria = 'ROJO'
+        r.mapaMemoria = string.format('semilla%d_%d_%d', self.suelo.terreno.semilla or 0, math.floor(combate.cx / 1000), math.floor(combate.cy / 1000))
+        self.robotsAsalto = { r }
+        for _, o in ipairs(guardias) do
+            o.idMemoria = o.datos.asalto.nombre
+            o.mapaMemoria = r.mapaMemoria
+            self.robotsAsalto[#self.robotsAsalto + 1] = o
+        end
+        local blancos = (lejos or guardia) and {} or {
+            { 40, math.rad(-30) },
+            -- A un costado: solo lo ve al girar la cabeza hacia ese lado.
+            { 60, math.rad(105) },
+            { 60, math.pi },
+        }
+        for n, b in ipairs(blancos) do
+            local a = haciaEnemigo + b[2]
+            local bx, by = sitioLibre(x + math.cos(a) * b[1] * 10, y + math.sin(a) * b[1] * 10)
+            local e = RobotsBatalla.crear('soldadoAsalto', self.suelo, bx, by, a + math.pi)
+            e.datos.asalto.bando, e.datos.asalto.nombre = 'azul', 'AZUL' .. n
+            self.robotsAsalto[#self.robotsAsalto + 1] = e
+        end
+        if lejosAzul then
+            local e = RobotsBatalla.crear('soldadoAsalto', self.suelo, lejosAzul[1], lejosAzul[2], haciaEnemigo + math.pi)
+            e.datos.asalto.bando, e.datos.asalto.nombre = 'azul', 'AZUL1'
+            self.robotsAsalto[#self.robotsAsalto + 1] = e
+            print(string.format('LEJOS: ROJO a %.0f m de AZUL1', math.sqrt((e.x - r.x) ^ 2 + (e.y - r.y) ^ 2)))
+            r:setAsalto('rojo', e.x, e.y, 'ROJO')
+        end
+        self.robotFoco = r
+        self.robotSeguible = r
+        self.camara:usarRobot(r)
     end
-    local blancos = (lejos or guardia) and {} or {
-        { 40, math.rad(-30) },
-        -- A un costado: solo lo ve al girar la cabeza hacia ese lado.
-        { 60, math.rad(105) },
-        { 60, math.pi },
-    }
-    for n, b in ipairs(blancos) do
-        local a = haciaEnemigo + b[2]
-        local bx, by = sitioLibre(x + math.cos(a) * b[1] * 10, y + math.sin(a) * b[1] * 10)
-        local e = RobotsBatalla.crear('soldadoAsalto', self.suelo, bx, by, a + math.pi)
-        e.datos.asalto.bando, e.datos.asalto.nombre = 'azul', 'AZUL' .. n
-        self.robotsAsalto[#self.robotsAsalto + 1] = e
-    end
-    if lejosAzul then
-        local e = RobotsBatalla.crear('soldadoAsalto', self.suelo, lejosAzul[1], lejosAzul[2], haciaEnemigo + math.pi)
-        e.datos.asalto.bando, e.datos.asalto.nombre = 'azul', 'AZUL1'
-        self.robotsAsalto[#self.robotsAsalto + 1] = e
-        print(string.format('LEJOS: ROJO a %.0f m de AZUL1', math.sqrt((e.x - r.x) ^ 2 + (e.y - r.y) ^ 2)))
-        r:setAsalto('rojo', e.x, e.y, 'ROJO')
-    end
-    self.robotFoco = r
-    self.robotSeguible = r
-    self.camara:usarRobot(r)
     -- El avión de carga (el dueño, 20-nov: «mételo al juego»): aparcado
     -- 130 m detrás del ROJO, con la cola hacia él; la abertura trasera se
     -- abre y se cierra (EscenaDream:actualizar). Sin él: BATALLA_AVION=0.
@@ -1248,7 +1261,7 @@ function EscenaDream:ponerRobots()
     -- leen los sensores y los ojos de los robots; se hace con el primer robot.
     -- (`self.fisica` es la de los tanques, la de antes.) Con
     -- `BATALLA_FISICA_CAJAS=1` se simula y caen cajas (prueba).
-    if os.getenv('BATALLA_FISICA_CAJAS') then
+    if os.getenv('BATALLA_FISICA_CAJAS') and r then
         self.fisicaJolt = Mundo.getFisica()
         local azar = love.math.newRandomGenerator(7)
         for k = 1, 16 do

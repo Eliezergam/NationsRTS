@@ -244,9 +244,11 @@ function Colocacion:estorbaAqui(x, y)
     -- De los pasillos de avance solo se despejan 20 m a cada lado del eje
     -- (antes los 50 m enteros más un margen: el camino del robot no tenía ni
     -- un árbol a la vista; el dueño, 19-nov: «faltan los árboles»).
-    -- Dentro de una ciudad o una mina (batalla/sitios/plano.lua), nada.
+    -- Dentro de una ciudad o una mina (batalla/sitios/plano.lua), árboles
+    -- donde no estorben (el dueño, 27-nov: «árboles tiene que haber en todos
+    -- lados»): ni en edificios, calles, muro ni en la franja de la pista.
     if s.plano and s.plano:dentro(x, y, 80) then
-        return true
+        return s.plano:estorbaArbol(x, y)
     end
     return s:pesoExplanada(x, y) > 0.5 or s:ocupado(x, y, 40) or require('batalla.pasillos').distancia(s, x, y) < 200
 end
@@ -418,9 +420,10 @@ function Colocacion:plantarBosque()
     local s = self.suelo
     local candidatos = {}
     -- Fuera del bosque, arboledas de frondosos y abedules por la pradera
-    -- (el dueño, 19-nov: «faltan los árboles», como la batalla de Unreal):
-    -- una arboleda (de 15 a 35 m de radio) en 4 de cada 10 cuadros de 60 m,
-    -- con un árbol cada pocos metros.
+    -- (el dueño, 19-nov: «faltan los árboles», como la batalla de Unreal; 27-nov:
+    -- «el terreno muy pobre de árboles»): una arboleda (de 18 a 45 m de radio)
+    -- en 7 de cada 10 cuadros de 60 m, con un árbol cada pocos metros, y el
+    -- doble de árboles sueltos que antes por la pradera.
     local semilla = self.semilla
     local CUADRO = 600
     local function arboleda(x, y)
@@ -429,9 +432,9 @@ function Colocacion:plantarBosque()
         for dj = -1, 1 do
             for di = -1, 1 do
                 local U = Ruido.generador(Ruido.hash(semilla, ci + di, cj + dj, 7304))
-                if U() < 0.4 then
+                if U() < 0.7 then
                     local ax, ay = (ci + di + U()) * CUADRO, (cj + dj + U()) * CUADRO
-                    local r = U(150, 350)
+                    local r = U(180, 450)
                     local d = math.sqrt((x - ax) ^ 2 + (y - ay) ^ 2) / r
                     if d < 1 then
                         mejor = math.max(mejor, 1 - d * d)
@@ -446,7 +449,7 @@ function Colocacion:plantarBosque()
         if b > 0.25 then
             return 0.75 * b
         end
-        return 0.004 + 0.3 * arboleda(x, y)
+        return 0.008 + 0.42 * arboleda(x, y)
     end
     self:recorrer(46, 20, 7301, prob, function(x, y, k, U)
         candidatos[#candidatos + 1] = { x = x, y = y, k = k, orden = U(), U = U }

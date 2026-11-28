@@ -439,6 +439,31 @@ function Escena:encuadrar(modo)
         self:encuadrarDespliegue()
     elseif modo == 'borde' then
         self:encuadrarBorde()
+    elseif modo == 'sitio' then
+        -- Entrar a una ciudad o una mina desde el mapa (el dueño, 26-nov): a
+        -- pie, a la altura de un robot, en el aeródromo de ese sitio. Cada
+        -- sitio genera su plano con su pista (Plano:ponerPista), así que vale
+        -- para todos: de pie en el borde norte de la plataforma, en medio,
+        -- mirando a las plazas y a la pista (al sur).
+        local plano = self.suelo.plano
+        local pista = plano and plano.pista
+        if pista then
+            local P = require('batalla.sitios.plano').aerodromo.plataforma
+            local co, si = math.cos(pista.rumbo), math.sin(pista.rumbo)
+            local l = P.hasta - 8
+            c.x = pista.x + si * l * 10
+            c.y = pista.y - co * l * 10
+            c.rumbo = math.atan2(-co, si) -- adelante (-cos, -sin) = hacia el sur
+        else
+            local sitio = self.combate.sitio
+            if sitio then
+                c.x, c.y = sitio.x, sitio.y
+            end
+            c.rumbo = self.combate.angulo
+        end
+        c.distancia = 2500
+        c.inclinacion = math.rad(35)
+        self:entrarPie()
     end
 end
 

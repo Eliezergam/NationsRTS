@@ -93,8 +93,9 @@ local registro
 
 local mundo
 local camara = { x = 0, y = 0, zoom = 0.2 }
--- Límites del zoom del mapa 2D (el dueño, 2026-09-30): de 4 % a 13 %.
-local ZOOM_MIN, ZOOM_MAX = 0.04, 0.13
+-- Límites del zoom del mapa 2D (el dueño, 2026-09-30): de 4 % a 13 %; el
+-- 26-nov, hasta el 20 % de cerca (para ver los aviones).
+local ZOOM_MIN, ZOOM_MAX = 0.04, 0.20
 -- Vista lejana (el dueño, 2026-09-30): por debajo del 7 % el mapa solo se mira
 -- (sin órdenes, recolectar, atacar ni plantar); vuelve a poder usarse al
 -- acercarse otra vez hasta el 10 %.
@@ -798,7 +799,13 @@ function love.load(arg)
         or yaEsta['--almacen']
         or yaEsta['--almacen-video']
         or (yaEsta['--captura'] and not modoLogin)
-    if sinLogin then
+    if yaEsta['--continuar'] then
+        -- `--continuar`: sin la pantalla de inicio, como pulsar «Invitado»
+        -- (sigue la partida guardada; con autoguardado). También con
+        -- `--captura`: la foto de la partida guardada.
+        inicio.preguntar = true
+        inicio.empezarPartida(Partida.semilla() or semilla)
+    elseif sinLogin then
         inicio.empezarPartida(semilla)
     else
         inicio.login = inicio.Login.nuevo(yaEsta['--captura'], inicio.fondo)
@@ -3224,9 +3231,12 @@ function entrarEnBatalla(combate)
         -- Preparación (diseno/batalla-despliegue-y-movimiento.md): 2:00 con
         -- el combate en pausa, también al volver a una batalla ya empezada.
         -- Las capturas que corren la pelea (`pelea3d`) entran ya en combate.
-        combate.preparacion = not captura
+        combate.preparacion = not captura and not combate.visita
         batalla = Escena.nueva(mundo, combate)
-        if combate.preparacion then
+        if combate.visita then
+            -- De visita: en el centro del sitio.
+            batalla:encuadrar('sitio')
+        elseif combate.preparacion then
             -- Vista alta detrás de su zona, mirando al enemigo (el dueño); al
             -- empezar el combate la cámara se queda donde esté.
             batalla:encuadrar('preparacion')
@@ -3870,6 +3880,12 @@ local function opcionesSitio(sim, s)
         }
         botones[#botones + 1] = regresar
         botones[#botones + 1] = {
+            clave = 'entrar',
+            icono = 'busqueda',
+            etiqueta = 'Entrar',
+            ayuda = 'Entrar en la ciudad: verla en 3D, con su aeródromo y sus aviones',
+        }
+        botones[#botones + 1] = {
             clave = 'base',
             icono = 'construir',
             etiqueta = 'Base',
@@ -4000,6 +4016,15 @@ local function opcionesMina(sim, m)
         o.botones[#o.botones + 1] =
             { clave = 'plantar', icono = 'bandera', etiqueta = 'Plantar', ayuda = 'Plantar una bandera cerca (P)' }
     end
+    -- Solo las de tu territorio (el dueño, 26-nov).
+    if m.dueno == jugador.jugador then
+        o.botones[#o.botones + 1] = {
+            clave = 'entrar',
+            icono = 'busqueda',
+            etiqueta = 'Entrar',
+            ayuda = 'Entrar en la mina: verla en 3D, con su aeródromo y sus aviones',
+        }
+    end
     o.botones[#o.botones + 1] = { clave = 'info', icono = 'misiones', etiqueta = 'Info', ayuda = 'Panel de la mina' }
     return o
 end
@@ -4032,6 +4057,19 @@ local function abrirBase(ciudad)
     ejercito:avisar('Base de ' .. (ciudad.nombre or 'la ciudad') .. ': en construcción')
 end
 
+--- Entra a mirar en 3D una ciudad o una mina (el dueño, 26-nov): la escena
+-- del sitio sin pelea (sin tropas ni preparación), con su aeródromo y los
+-- aviones del mapa que le tocan. Al salir no cambia nada.
+local function entrarEnSitio(objetivo)
+    local fuerzas = { nacion = jugador.jugador, soldados = 0, tanques = 0, lanzacohetes = 0 }
+    local combate = Escena.describir(mundo, fuerzas, objetivo, math.pi / 2)
+    combate.visita = true
+    for _, lado in ipairs({ combate.atacante, combate.defensor }) do
+        lado.soldados, lado.tanques, lado.lanzacohetes, lado.fuerza = 0, 0, 0, 0
+    end
+    entrarEnBatalla(combate)
+end
+
 --- Abre el panel de exploración contra `objetivo` = { id, x, y, nombre }.
 local function abrirExplorar(objetivo)
     explorando = Explorar.nuevo(mundo.sim, jugador.jugador, objetivo)
@@ -4056,6 +4094,8 @@ function accionRadial(clave)
         seleccionada, instalacionVista, minaVista = nil, nil, nil
     elseif clave == 'base' then
         abrirBase(s)
+    elseif clave == 'entrar' then
+        entrarEnSitio(s)
     elseif clave == 'info' or clave == 'tropas' then
         if o.tipo == 'mina' then
             seleccionada, instalacionVista, minaVista = nil, nil, s.id
