@@ -31,6 +31,11 @@ TerrenoTrozos.tolerancia = 2 -- px de pantalla (a 1080 de alto) que puede aparta
 TerrenoTrozos.pesoColor = 25 -- px de error por unidad de diferencia de color (sRGB de 0 a 1)
 TerrenoTrozos.pesoOrilla = 4 -- el error de altura cuenta por tanto cerca del nivel del mar (mueve la costa)
 TerrenoTrozos.orilla = 40 -- px sobre o bajo el mar en los que se aplica `pesoOrilla`
+-- Bajo pavimento (calles, cruces, pista y plataforma: suelo.pavimento), lo
+-- que un nivel sencillo suba por encima de la rejilla cuenta por tanto: las
+-- calles van a pocos cm del terreno y de lejos asomaba entre las losas
+-- (el dueño, 27-nov). Bajar no importa (queda tapado).
+TerrenoTrozos.pesoPavimento = 40
 TerrenoTrozos.histeresis = 0.7 -- un trozo pasa a un nivel más sencillo con este margen
 TerrenoTrozos.campo = math.rad(40) -- campo vertical de la cámara de la batalla
 TerrenoTrozos.margenGiro = math.rad(25) -- grados de más a cada lado del recorte
@@ -54,8 +59,9 @@ end
 --- Error (px) del nivel de líneas `is`, `js` en el trozo: lo más que se
 -- aparta un vértice de la rejilla de su triángulo del nivel, en altura o en
 -- color. Interpola en el espacio de índices (los mismos triángulos).
-local function errorNivel(rej, is, js, nivelMar)
+local function errorNivel(rej, is, js, nivelMar, pavimento)
     local lado = rej.lado
+    local pesoPavimento = TerrenoTrozos.pesoPavimento
     local h, cr, cg, cb = rej.h, rej.cr, rej.cg, rej.cb
     local peso = TerrenoTrozos.pesoColor
     local orilla, pesoOrilla = TerrenoTrozos.orilla, TerrenoTrozos.pesoOrilla
@@ -96,6 +102,9 @@ local function errorNivel(rej, is, js, nivelMar)
                     -- Cerca del mar, un error pequeño mueve la línea de costa.
                     if math.abs(h[k] - nivelMar) < orilla then
                         eh = eh * pesoOrilla
+                    end
+                    if eh > 0 and pavimento and pavimento[k] then
+                        eh = eh * pesoPavimento
                     end
                     alto = math.max(alto, math.abs(eh))
                     color = math.max(color, math.abs(er), math.abs(eg), math.abs(eb))
@@ -223,7 +232,7 @@ function TerrenoTrozos.nuevo(dream, conversor, suelo, material, opciones, inform
                     local is, js = lineasNivel(i0, i1, paso), lineasNivel(j0, j1, paso)
                     local errorAlto, errorColor = 0, 0
                     if paso > 1 then
-                        errorAlto, errorColor = errorNivel(rej, is, js, suelo.nivelMar)
+                        errorAlto, errorColor = errorNivel(rej, is, js, suelo.nivelMar, suelo.pavimento)
                     end
                     -- Un nivel más sencillo nunca vale menos error que el anterior.
                     local anterior = t.niveles[nivel - 1]

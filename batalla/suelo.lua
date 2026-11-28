@@ -131,6 +131,9 @@ function Suelo.nuevo(mundo, cx, cy, sitio, combate, carga)
     -- Ciudad o mina armada con las piezas del kit (batalla/sitios/plano.lua),
     -- antes de las plantas: dentro no crecen árboles y las calles son tierra.
     self:informarCarga('Trazando las calles y los edificios', 0.61, true)
+    -- Vértices del terreno bajo pavimento (calles, cruces, pista y
+    -- plataforma): los apunta el plano para el terreno de lejos.
+    self.pavimento = {}
     self.plano = require('batalla.sitios.plano').generar(self, self.sitio)
     -- El límite de la batalla se abre lo justo para que el muro quede dentro.
     if self.plano and self.plano.recinto then

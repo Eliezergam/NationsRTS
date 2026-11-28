@@ -54,6 +54,14 @@ local function cruzar(ax, ay, bx, by, cx, cy, dx, dy)
     return nil
 end
 
+--- Apunta que el vértice `k` del terreno queda bajo pavimento: el terreno
+-- de lejos no puede subir por encima ahí (batalla/dream/terreno_trozos.lua).
+local function marcar(s, k)
+    if s.pavimento then
+        s.pavimento[k] = true
+    end
+end
+
 local function distSegmento(x, y, ax, ay, bx, by)
     local dx, dy = bx - ax, by - ay
     local l2 = dx * dx + dy * dy
@@ -606,6 +614,7 @@ function Calles:nivelar()
                 local d2 = (x - n.x) ^ 2 + (y - n.y) ^ 2
                 if d2 < rr * rr then
                     ph[k] = math.min(ph[k], n.z - 0.5)
+                    marcar(s, k)
                 end
             end)
         elseif #n.aristas == 1 then
@@ -616,6 +625,7 @@ function Calles:nivelar()
             s:vertices(n.x - r, n.y - r, n.x + r, n.y + r, function(k, x, y)
                 if (x - n.x) ^ 2 + (y - n.y) ^ 2 < r * r then
                     ph[k] = math.min(ph[k], n.z - 0.5)
+                    marcar(s, k)
                 end
             end)
         end
@@ -637,11 +647,85 @@ function Calles:nivelar()
                     if ph[kv] > z then
                         ph[kv] = z
                     end
+                    marcar(s, kv)
                 end
             end)
             acumulado = acumulado + l
         end
     end
+end
+
+-- Medición (el dueño, 27-nov: «las calles son las que más perfectas tienen
+-- que quedar»): cada `Calles.pasoMedida` px a lo largo de cada calle, en el
+-- eje, los bordes de la calzada y los de las aceras, se mira el triángulo
+-- del terreno que hay debajo (el mismo que se dibuja). Si asoma por encima
+-- de `Calles.holgura` px bajo el asfalto, sus tres vértices se bajan. Se
+-- repite hasta que no asome nada (o `Calles.pasadas` veces).
+Calles.pasoMedida = 5 -- px (0,5 m)
+Calles.holgura = 0.5 -- px (5 cm) que el terreno queda, como poco, bajo la calle
+Calles.pasadas = 4
+
+--- Mide el terreno bajo todas las calles y lo baja donde asoma. Devuelve
+-- los puntos medidos, cuántos asomaban la primera vez, lo más que asomaba
+-- (px) y cuántos quedan al final.
+function Calles:medirYCorregir()
+    local s = self.suelo
+    local rej = s.relieve
+    if not (rej and rej.interpolar and rej.h) then
+        return 0, 0, 0, 0
+    end
+    local ph = rej.h
+    local medidos, primeros, peor, quedan = 0, 0, 0, 0
+    for pasada = 1, Calles.pasadas do
+        local asoman = 0
+        for _, e in ipairs(self.aristas) do
+            local d = e.datos
+            local laterales = { 0, d.calzada / 2, -d.calzada / 2, d.calzada / 2 + d.acera, -(d.calzada / 2 + d.acera) }
+            local largo = e.largo or Calles.largo(e)
+            local n = math.max(1, math.ceil(largo / Calles.pasoMedida))
+            for i = 0, n do
+                local si = largo * i / n
+                local x, y = Calles.punto(e, si)
+                local x2, y2 = Calles.punto(e, math.min(largo, si + 1))
+                local x1, y1 = Calles.punto(e, math.max(0, si - 1))
+                local tx, ty = x2 - x1, y2 - y1
+                local l = math.sqrt(tx * tx + ty * ty)
+                if l > 0 then
+                    local nx, ny = -ty / l, tx / l
+                    local z = Calles.alturaEn(e, si) - Calles.holgura
+                    for _, b in ipairs(laterales) do
+                        local px, py = x + nx * b, y + ny * b
+                        local h = rej:interpolar(ph, px, py)
+                        if pasada == 1 then
+                            medidos = medidos + 1
+                        end
+                        if h > z then
+                            asoman = asoman + 1
+                            if pasada == 1 then
+                                peor = math.max(peor, h - z)
+                            end
+                            -- Un poco más (0,2 cm) que el límite: bajado
+                            -- justo a z, el redondeo lo vuelve a contar.
+                            for _, k in ipairs({ rej.ta, rej.tb, rej.tc }) do
+                                if ph[k] > z - 0.02 then
+                                    ph[k] = z - 0.02
+                                end
+                                marcar(s, k)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        if pasada == 1 then
+            primeros = asoman
+        end
+        quedan = asoman
+        if asoman == 0 then
+            break
+        end
+    end
+    return medidos, primeros, peor, quedan
 end
 
 --- Altura de la calzada de `e` a la distancia `s` de su principio.

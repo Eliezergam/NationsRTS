@@ -258,6 +258,15 @@ function Plano.generar(suelo, sitio)
     else
         return nil
     end
+    -- Lo último, cuando ya no se explana nada más: el terreno, por debajo
+    -- de todas las calles (medido, Calles:medirYCorregir) y apuntado como
+    -- pavimento bajo el aeródromo.
+    if self.vias then
+        local t0 = love.timer.getTime()
+        local medidos, asomaban, peor, quedan = self.vias:medirYCorregir()
+        print(string.format('CALLES medidas en %d puntos: el terreno asomaba en %d (hasta %.2f m); quedan %d (%.0f ms)', medidos, asomaban, peor / 10, quedan, (love.timer.getTime() - t0) * 1000))
+    end
+    self:marcarAerodromo()
     local n = 0
     for _ in pairs(self.edificios) do
         n = n + 1
@@ -472,6 +481,24 @@ end
 -- calles y aceras.
 function Plano:estorbaPlanta(x, y)
     return self:ocupado(x, y, 8) or (self.vias ~= nil and self.vias:sobre(x, y, 5)) or self:sobreAerodromo(x, y, 0, 0)
+end
+
+--- Apunta como pavimento los vértices del terreno bajo la pista y la
+-- plataforma (batalla/dream/terreno_trozos.lua no deja que el terreno de
+-- lejos suba por encima ahí).
+function Plano:marcarAerodromo()
+    local s = self.suelo
+    local p = self.pista
+    if not (p and s.pavimento and s.vertices and s.relieve) then
+        return
+    end
+    local A = Plano.aerodromo
+    local largo = A.medioLargo * 10 + 300
+    s:vertices(p.x - largo, p.y - A.plataforma.hasta * 10, p.x + largo, p.y + A.medioAncho, function(k, x, y)
+        if self:sobreAerodromo(x, y, 0, 0) then
+            s.pavimento[k] = true
+        end
+    end)
 end
 
 --- ¿Está (x, y) sobre el aeródromo: la pista con sus arcenes y la
