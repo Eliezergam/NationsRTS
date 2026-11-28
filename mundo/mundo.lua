@@ -1284,6 +1284,43 @@ function Mundo:minaEn(vx, vy)
             return self.cajasMinas[i].id
         end
     end
+    -- O en cualquier punto de su recinto (la maqueta entera, mundo/maquetas.lua).
+    local tipo, id = self:recintoEn(vx, vy)
+    if tipo == 'mina' then
+        return id
+    end
+    return nil
+end
+
+--- Sitio cuyo recinto (el muro de su maqueta, Plano.recintoRelativo) está
+-- bajo el punto (vx, vy) de la vista (el dueño, 27-nov: el clic tiene que
+-- valer en toda la ciudad o la mina, no solo en su centro). Devuelve 'mina'
+-- y el id del yacimiento, 'ciudad' y la ciudad, o nil.
+function Mundo:recintoEn(vx, vy)
+    -- El punto del suelo bajo el cursor (la vista sube con la altura).
+    local x, y = Iso.mundo(vx, vy)
+    for _ = 1, 4 do
+        local z = math.max(0, self.terreno:altura(x, y))
+        x, y = Iso.mundo(vx, vy + z * Iso.escalaAltura)
+    end
+    local Plano = require('batalla.sitios.plano')
+    local function dentro(sx, sy, tipo, capital, deposito)
+        if math.abs(x - sx) > 1500 or math.abs(y - sy) > 1500 then
+            return false
+        end
+        local x0, y0, x1, y1 = Plano.recintoRelativo(tipo, capital, deposito)
+        return x - sx > x0 and x - sx < x1 and y - sy > y0 and y - sy < y1
+    end
+    for id, d in pairs(self.depositosVistos) do
+        if dentro(d.x, d.y, 'mina', false, d.tipo) then
+            return 'mina', id
+        end
+    end
+    for _, ciudad in pairs(self.ciudadesVistas) do
+        if dentro(ciudad.x, ciudad.y, 'ciudad', true) then
+            return 'ciudad', ciudad
+        end
+    end
     return nil
 end
 

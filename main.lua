@@ -2292,6 +2292,11 @@ function love.update(dt)
         return
     end
     relojAutoguardado = relojAutoguardado + dt
+    -- El reloj del almacén solo corre fuera de él: lo que trabaja el robot
+    -- mientras no se le ve (EscenaAlmacen:trabajoFuera).
+    if not almacenVista then
+        MemoriaAlmacen.avanzar(dt)
+    end
     if relojAutoguardado >= AUTOGUARDADO then
         autoguardar()
         relojAutoguardado = 0
@@ -4983,6 +4988,13 @@ function love.mousepressed(x, y, boton)
         local cx, cy = Iso.vista(ciudad.x, ciudad.y, ciudad.altura)
         local dx, dy = (vx - cx), (vy - cy) * 2
         if dx * dx + dy * dy < (ciudad.radio * 1.3) ^ 2 then
+            seleccionada = ciudad
+        end
+    end
+    if not seleccionada and not mina then
+        -- En cualquier punto de su recinto (la maqueta entera).
+        local tipo, ciudad = mundo:recintoEn(vx, vy)
+        if tipo == 'ciudad' then
             seleccionada = ciudad
         end
     end

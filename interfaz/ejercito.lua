@@ -401,6 +401,12 @@ function Ejercito.destinoEn(mundo, vx, vy)
     if mejor then
         return mejor
     end
+    -- En cualquier punto de su recinto (la maqueta entera).
+    local tipo, ciudad = mundo:recintoEn(vx, vy)
+    local datos = tipo == 'ciudad' and sim:ciudad(ciudad.region)
+    if datos then
+        return { tipo = 'sitio', x = datos.x, y = datos.y, sitio = datos, nombre = datos.nombre }
+    end
     local x, y = Plantar.sueloBajo(mundo.terreno, vx, vy)
     return { tipo = 'punto', x = x, y = y, nombre = 'ese punto' }
 end

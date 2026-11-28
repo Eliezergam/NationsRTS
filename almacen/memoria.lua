@@ -18,6 +18,17 @@ function Memoria.de(nacion)
     return m
 end
 
+--- Reloj de juego que solo corre fuera del almacén (main.lua lo avanza):
+-- con él se sabe cuánto trabajó el robot sin que lo vieran. Va en la misma
+-- tabla, así se guarda con la partida.
+function Memoria.avanzar(dt)
+    porNacion.reloj = (porNacion.reloj or 0) + dt
+end
+
+function Memoria.reloj()
+    return porNacion.reloj or 0
+end
+
 --- Para la partida: todo, por nación.
 function Memoria.guardar()
     return porNacion

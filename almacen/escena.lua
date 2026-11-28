@@ -24,6 +24,7 @@
 
 require('almacen.almacen')
 local Disposicion = require('almacen.disposicion')
+local Memoria = require('almacen.memoria')
 local dream = require('lib.3DreamEngine')
 local Escalado = require('batalla.dream.escalado')
 local Controlador = require('batalla.controlador_camara')
@@ -484,7 +485,97 @@ function EscenaAlmacen:llenarDescarga()
         end
         return table.concat(t, ' ')
     end)()))
+    self:trabajoFuera()
     self:llegarTanda()
+end
+
+-- Lo que tarda el robot en guardar una caja (ir a la mesa, cogerla, llevarla
+-- al rack y dejarla), medido en el almacén: unos 45 s.
+EscenaAlmacen.segundosPorCaja = 45
+
+-- Los racks de cada recurso, por su cartel (tools/blender/almacen_interior.py,
+-- FILAS_ANEXO): fila y racks desde la entrada.
+EscenaAlmacen.racksDe = {
+    dinero = { 'dinero', 1, 5 },
+    obuses = { 'municion', 1, 5 },
+    comida = { 'comida', 1, 5 },
+    metal = { 'metalPetroleo', 1, 3 },
+    petroleo = { 'metalPetroleo', 4, 5 },
+}
+
+--- Primer hueco libre para `recurso`, como lo elige el robot: el rack más
+-- cercano a la entrada primero y, en cada rack, abajo de un lado al otro y
+-- luego arriba (almacenaje.lua, destino y huecoLibre).
+function EscenaAlmacen:huecoEnRack(recurso)
+    local r = EscenaAlmacen.racksDe[recurso]
+    local fila = r and self.filas[r[1]]
+    if not fila then
+        return nil
+    end
+    for k = r[2], r[3] do
+        local rack = fila[k]
+        local huecos = rack:getHuecos()
+        table.sort(huecos, function(a, b)
+            if math.abs(a.z - b.z) > 0.01 then
+                return a.z < b.z
+            end
+            return a.x < b.x
+        end)
+        for _, h in ipairs(huecos) do
+            if not h.ocupado then
+                return rack, h.numero
+            end
+        end
+    end
+    return nil
+end
+
+--- El almacén trabaja aunque no se esté dentro (el dueño, 27-nov: «cada vez
+-- que entro la sala de descarga está llena de cajas»). Con el tiempo de
+-- juego que pasó fuera, el robot ya guardó en sus racks lo que le dio
+-- tiempo: primero lo que quedó en las mesas y luego lo que llegó mientras
+-- tanto. Lo que no le dio tiempo espera en el patio, como siempre.
+function EscenaAlmacen:trabajoFuera()
+    local memoria = Memoria.de(self.almacen:getNacion())
+    local fuera = memoria.salida and (Memoria.reloj() - memoria.salida) or math.huge
+    local puede = math.floor(math.max(0, fuera) / EscenaAlmacen.segundosPorCaja)
+    local datos = self.datosSuministros
+    local guardadas = 0
+    -- Lo que quedó en las mesas del patio.
+    for _, o in ipairs(self.suministros) do
+        local mueble = o:getApoyadoEn()
+        if guardadas < puede and mueble and mueble:getTipo() == 'mesaRecepcion' then
+            local rack, numero = self:huecoEnRack(datos[o:getTipo()].recurso)
+            if rack then
+                o:setApoyar(rack, numero)
+                guardadas = guardadas + 1
+            end
+        end
+    end
+    -- Lo que llegó mientras tanto: directo a su rack, por turnos.
+    local alguna = true
+    while guardadas < puede and alguna do
+        alguna = false
+        for _, tipo in ipairs(EscenaAlmacen.suministros) do
+            local queda = self.porLlegar[tipo] or 0
+            local rack, numero
+            if queda > 0 and guardadas < puede then
+                rack, numero = self:huecoEnRack(datos[tipo].recurso)
+            end
+            if rack then
+                local cantidad = math.min(porCaja(datos[tipo]), queda)
+                self.porLlegar[tipo] = queda - cantidad
+                local hueco = rack:getHueco(numero)
+                local o = GestorObjetos.crear(tipo, hueco.x, hueco.y, hueco.z, hueco.rumbo)
+                o:setApoyar(rack, numero)
+                o.cantidad = cantidad
+                self.suministros[#self.suministros + 1] = o
+                guardadas, alguna = guardadas + 1, true
+            end
+        end
+    end
+    memoria.salida = Memoria.reloj()
+    print(string.format('ALMACEN mientras no estabas: %s de juego, el robot guardó %d cajas en los racks', fuera == math.huge and 'sin medir' or string.format('%.0f s', fuera), guardadas))
 end
 
 -- Cada cuánto mira si cabe otra tanda y cuántos huecos libres hacen falta
@@ -1159,7 +1250,15 @@ function EscenaAlmacen:guardarDisposicion()
     end
     local cajas = Disposicion.tomar(self, GestorObjetos.getObjetos(), EscenaAlmacen.suministros)
     Disposicion.guardar(self.almacen, self.almacen:getSemilla(), cajas)
-    print(string.format('ALMACEN guardadas %d cajas en su sitio', #cajas))
+    -- Desde aquí cuenta el tiempo fuera (EscenaAlmacen:trabajoFuera).
+    Memoria.de(self.almacen:getNacion()).salida = Memoria.reloj()
+    local enRack = 0
+    for _, c in ipairs(cajas) do
+        if c.lugar[1] == 'rack' then
+            enRack = enRack + 1
+        end
+    end
+    print(string.format('ALMACEN guardadas %d cajas en su sitio (%d en racks, %d en mesas)', #cajas, enRack, #cajas - enRack))
 end
 
 --- Devuelve el motor como lo tenía la batalla.
