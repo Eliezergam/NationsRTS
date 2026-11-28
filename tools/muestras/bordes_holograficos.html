@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bordes holográficos</title>
+<style>
+  :root {
+    --fondo: #101418;
+    --tarjeta: #1a2026;
+    --texto: #e8edf1;
+    --suave: #8b97a3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--fondo);
+    color: var(--texto);
+    font: 15px/1.4 system-ui, sans-serif;
+    padding: 16px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.ayuda { color: var(--suave); margin: 0 0 16px; }
+  .rejilla {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
+    gap: 14px;
+  }
+  .tarjeta {
+    background: var(--tarjeta);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .tarjeta canvas { display: block; width: 100%; height: auto; }
+  .pie { padding: 8px 12px 10px; }
+  .pie b { font-size: 16px; }
+  .pie span { color: var(--suave); display: block; font-size: 13px; }
+  @media (max-width: 480px) {
+    .rejilla { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<h1>Bordes de territorio holográficos</h1>
+<p class="ayuda">El mismo territorio (cuadros de la rejilla de banderas) con 10 estilos, en el color de tu nación. Dime el número que te guste.</p>
+<div class="rejilla" id="rejilla"></div>
+<script>
+'use strict';
+const ANCHO = 880, ALTO = 520;
+const COLOR = [200, 240, 74];     // el amarillo verdoso de tu nación
+const CIAN = [90, 230, 255];
+
+// Territorio: cuadros (bloques de bandera) en una rejilla de 12 x 12.
+const CUADROS = new Set([
+  '3,3','4,3','5,3','3,4','4,4','5,4','3,5','4,5','5,5',     // la ciudad (3 x 3)
+  '6,4','6,5','7,5','5,6','4,6','2,4','4,2','7,6','6,6',     // banderas
+]);
+const LADO = 62;                  // px de un cuadro en el plano
+
+function iso(x, y) {
+  return [ANCHO / 2 + (x - y - 1) * LADO * 0.95, ALTO / 2 + (x + y - 9) * LADO * 0.475];
+}
+
+// Contorno ordenado del territorio (aristas de cuadros con un vecino fuera).
+function contorno() {
+  const aristas = new Map();
+  const dentro = (x, y) => CUADROS.has(x + ',' + y);
+  const poner = (a, b) => aristas.set(a.join(','), b);
+  for (const k of CUADROS) {
+    const [x, y] = k.split(',').map(Number);
+    if (!dentro(x, y - 1)) poner([x, y], [x + 1, y]);
+    if (!dentro(x + 1, y)) poner([x + 1, y], [x + 1, y + 1]);
+    if (!dentro(x, y + 1)) poner([x + 1, y + 1], [x, y + 1]);
+    if (!dentro(x - 1, y)) poner([x, y + 1], [x, y]);
+  }
+  const inicio = aristas.keys().next().value;
+  const lazo = [];
+  let k = inicio;
+  do {
+    const p = k.split(',').map(Number);
+    lazo.push(p);
+    k = aristas.get(k).join(',');
+  } while (k !== inicio && lazo.length < 400);
+  return lazo.map(p => iso(p[0], p[1]));
+}
+const LAZO = contorno();
+let PERIMETRO = 0;
+const TRAMOS = LAZO.map((p, i) => {
+  const q = LAZO[(i + 1) % LAZO.length];
+  const l = Math.hypot(q[0] - p[0], q[1] - p[1]);
+  const t = { p, q, l, desde: PERIMETRO };
+  PERIMETRO += l;
+  return t;
+});
+function puntoEn(d) {
+  d = ((d % PERIMETRO) + PERIMETRO) % PERIMETRO;
+  for (const t of TRAMOS) {
+    if (d <= t.desde + t.l) {
+      const f = (d - t.desde) / t.l;
+      return [t.p[0] + (t.q[0] - t.p[0]) * f, t.p[1] + (t.q[1] - t.p[1]) * f];
+    }
+  }
+  return LAZO[0];
+}
+
+// Fondo de mapa: pasto con manchas, agua y árboles (fijo).
+function hacerFondo() {
+  const c = document.createElement('canvas');
+  c.width = ANCHO; c.height = ALTO;
+  const g = c.getContext('2d');
+  g.fillStyle = '#7fae4a';
+  g.fillRect(0, 0, ANCHO, ALTO);
+  let semilla = 7;
+  const azar = () => (semilla = (semilla * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 160; i++) {
+    g.fillStyle = azar() < 0.5 ? 'rgba(90,140,50,0.35)' : 'rgba(170,190,90,0.25)';
+    g.beginPath();
+    g.ellipse(azar() * ANCHO, azar() * ALTO, 20 + azar() * 70, 10 + azar() * 35, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  const agua = (x, y, rx, ry) => {
+    g.fillStyle = '#e3d3a2';
+    g.beginPath(); g.ellipse(x, y, rx + 10, ry + 6, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#3f8fd0';
+    g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); g.fill();
+  };
+  agua(130, 440, 210, 90);
+  agua(790, 130, 170, 70);
+  for (let i = 0; i < 90; i++) {
+    const x = azar() * ANCHO, y = azar() * ALTO;
+    g.fillStyle = 'rgba(0,0,0,0.25)';
+    g.beginPath(); g.ellipse(x + 3, y + 3, 5, 2.5, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#3d6a2c';
+    g.beginPath(); g.arc(x, y - 6, 6, 0, Math.PI * 2); g.fill();
+  }
+  // La torre de la ciudad.
+  const [tx, ty] = iso(4.5, 4.5);
+  g.fillStyle = '#dcdde2';
+  g.beginPath(); g.moveTo(tx, ty - 18); g.lineTo(tx + 34, ty); g.lineTo(tx, ty + 18); g.lineTo(tx - 34, ty); g.fill();
+  g.fillStyle = '#6f87b4'; g.fillRect(tx - 10, ty - 90, 20, 92);
+  g.fillStyle = '#8fa6d0'; g.fillRect(tx - 10, ty - 90, 9, 92);
+  return c;
+}
+const FONDO = hacerFondo();
+
+// Ayudas de dibujo.
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+function trazo(g) {
+  g.beginPath();
+  LAZO.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])));
+  g.closePath();
+}
+function linea(g, ancho, color, desenfoque = 0, colorSombra = null) {
+  g.save();
+  g.lineJoin = 'round';
+  g.lineWidth = ancho;
+  g.strokeStyle = color;
+  if (desenfoque) { g.shadowBlur = desenfoque; g.shadowColor = colorSombra || color; }
+  trazo(g);
+  g.stroke();
+  g.restore();
+}
+function rellenoDentro(g, estilo) {
+  g.save(); trazo(g); g.fillStyle = estilo; g.fill(); g.restore();
+}
+// Cortina de luz que sube desde el borde (pared holográfica).
+function cortina(g, alto, c, a) {
+  for (const t of TRAMOS) {
+    const gr = g.createLinearGradient(0, t.p[1], 0, t.p[1] - alto);
+    gr.addColorStop(0, rgba(c, a));
+    gr.addColorStop(1, rgba(c, 0));
+    g.fillStyle = gr;
+    g.beginPath();
+    g.moveTo(t.p[0], t.p[1]); g.lineTo(t.q[0], t.q[1]);
+    g.lineTo(t.q[0], t.q[1] - alto); g.lineTo(t.p[0], t.p[1] - alto);
+    g.closePath(); g.fill();
+  }
+}
+
+const ESTILOS = [
+  {
+    nombre: 'Neón doble',
+    texto: 'Núcleo blanco con halo del color de tu nación que respira despacio.',
+    dibujar(g, t) {
+      const r = 0.75 + 0.25 * Math.sin(t * 2);
+      linea(g, 9, rgba(COLOR, 0.35 * r), 24);
+      linea(g, 4, rgba(COLOR, 0.9), 10);
+      linea(g, 1.4, 'rgba(255,255,240,0.95)');
+    },
+  },
+  {
+    nombre: 'Pulso que recorre',
+    texto: 'Línea con brillo suave y un destello que da la vuelta al borde.',
+    dibujar(g, t) {
+      linea(g, 3, rgba(COLOR, 0.55), 12);
+      linea(g, 1.2, rgba(COLOR, 0.95));
+      for (let k = 0; k < 2; k++) {
+        const d0 = t * 260 + k * PERIMETRO / 2;
+        for (let i = 0; i < 40; i++) {
+          const [x, y] = puntoEn(d0 - i * 3);
+          g.fillStyle = rgba([255, 255, 230], (1 - i / 40) * 0.9);
+          g.shadowBlur = 16; g.shadowColor = rgba(COLOR, 1);
+          g.beginPath(); g.arc(x, y, 3.2 * (1 - i / 50), 0, Math.PI * 2); g.fill();
+        }
+      }
+      g.shadowBlur = 0;
+    },
+  },
+  {
+    nombre: 'Holograma con aberración',
+    texto: 'Copias roja y cian corridas, con parpadeo ligero, como una proyección.',
+    dibujar(g, t) {
+      const tiembla = Math.random() < 0.04 ? 3 : 0;
+      g.save(); g.globalCompositeOperation = 'lighter';
+      g.translate(-2 - tiembla, 0); linea(g, 2, 'rgba(255,60,90,0.55)', 6);
+      g.translate(4 + tiembla * 2, 0); linea(g, 2, 'rgba(60,220,255,0.55)', 6);
+      g.restore();
+      const a = 0.85 + 0.15 * Math.sin(t * 23) * Math.sin(t * 7);
+      linea(g, 2, rgba(COLOR, a), 10);
+    },
+  },
+  {
+    nombre: 'Muro de luz',
+    texto: 'Una cortina translúcida que sube desde el borde y se desvanece hacia arriba.',
+    dibujar(g, t) {
+      cortina(g, 34 + 4 * Math.sin(t * 1.5), COLOR, 0.38);
+      linea(g, 2.2, rgba(COLOR, 0.95), 12);
+      g.save(); g.translate(0, -34 - 4 * Math.sin(t * 1.5));
+      linea(g, 1, rgba(COLOR, 0.35)); g.restore();
+    },
+  },
+  {
+    nombre: 'Guiones de energía',
+    texto: 'Trazos brillantes que fluyen alrededor del territorio, sobre una línea tenue.',
+    dibujar(g, t) {
+      linea(g, 1.2, rgba(COLOR, 0.35));
+      g.save();
+      g.setLineDash([18, 12]);
+      g.lineDashOffset = -t * 40;
+      linea(g, 3, rgba(COLOR, 0.95), 14);
+      g.restore();
+    },
+  },
+  {
+    nombre: 'Malla hexagonal',
+    texto: 'Dentro del territorio una malla de hexágonos muy tenue; borde brillante.',
+    dibujar(g, t) {
+      g.save(); trazo(g); g.clip();
+      g.strokeStyle = rgba(COLOR, 0.16 + 0.06 * Math.sin(t * 2));
+      g.lineWidth = 1;
+      const r = 12, w = r * Math.sqrt(3);
+      for (let fila = 0; fila * r * 1.5 < ALTO + r; fila++) {
+        for (let col = 0; col * w < ANCHO + w; col++) {
+          const cx = col * w + (fila % 2 ? w / 2 : 0), cy = fila * r * 1.5;
+          g.beginPath();
+          for (let k = 0; k < 6; k++) {
+            const a = Math.PI / 6 + k * Math.PI / 3;
+            const x = cx + r * Math.cos(a), y = cy + r * Math.sin(a) * 0.55;
+            k ? g.lineTo(x, y) : g.moveTo(x, y);
+          }
+          g.closePath(); g.stroke();
+        }
+      }
+      g.restore();
+      linea(g, 2.4, rgba(COLOR, 0.95), 12);
+    },
+  },
+  {
+    nombre: 'Interferencia',
+    texto: 'Franjas horizontales que bajan por el borde, como una pantalla de holograma.',
+    dibujar(g, t) {
+      const capa = document.createElement('canvas');
+      capa.width = ANCHO; capa.height = ALTO;
+      const c = capa.getContext('2d');
+      linea(c, 6, rgba(COLOR, 1), 14);
+      c.globalCompositeOperation = 'destination-out';
+      const desp = (t * 30) % 6;
+      for (let y = -6; y < ALTO; y += 6) {
+        c.fillStyle = 'rgba(0,0,0,0.55)';
+        c.fillRect(0, y + desp, ANCHO, 2);
+      }
+      g.drawImage(capa, 0, 0);
+      linea(g, 1, 'rgba(255,255,235,0.8)');
+    },
+  },
+  {
+    nombre: 'Doble línea de visor',
+    texto: 'Dos líneas finas paralelas con marcas en las esquinas, estilo pantalla táctica.',
+    dibujar(g, t) {
+      linea(g, 1.4, rgba(COLOR, 0.9), 8);
+      g.save(); g.translate(0, -5); linea(g, 1, rgba(COLOR, 0.45)); g.restore();
+      const a = 0.6 + 0.4 * Math.sin(t * 3);
+      for (const p of LAZO) {
+        g.fillStyle = rgba(COLOR, a);
+        g.shadowBlur = 10; g.shadowColor = rgba(COLOR, 1);
+        g.fillRect(p[0] - 2.5, p[1] - 2.5, 5, 5);
+      }
+      g.shadowBlur = 0;
+    },
+  },
+  {
+    nombre: 'Brillo hacia dentro',
+    texto: 'El territorio se ilumina desde el borde hacia dentro; borde fino y nítido.',
+    dibujar(g, t) {
+      g.save(); trazo(g); g.clip();
+      for (let i = 0; i < 6; i++) {
+        linea(g, 40 - i * 6, rgba(COLOR, 0.05 + 0.01 * Math.sin(t * 2)));
+      }
+      g.restore();
+      linea(g, 1.6, rgba([235, 255, 170], 0.95), 8, rgba(COLOR, 1));
+    },
+  },
+  {
+    nombre: 'Chispas en la cortina',
+    texto: 'Cortina baja y puntos de luz que suben desde el borde y se apagan.',
+    dibujar(g, t, estado) {
+      cortina(g, 16, COLOR, 0.25);
+      linea(g, 2, rgba(COLOR, 0.95), 10);
+      estado.chispas = estado.chispas || [];
+      if (estado.chispas.length < 70) {
+        const [x, y] = puntoEn(Math.random() * PERIMETRO);
+        estado.chispas.push({ x, y, v: 10 + Math.random() * 20, vida: 1 });
+      }
+      for (const c of estado.chispas) {
+        c.y -= c.v / 60; c.vida -= 0.012;
+        g.fillStyle = rgba([240, 255, 200], Math.max(0, c.vida));
+        g.shadowBlur = 8; g.shadowColor = rgba(COLOR, 1);
+        g.beginPath(); g.arc(c.x, c.y, 1.6, 0, Math.PI * 2); g.fill();
+      }
+      g.shadowBlur = 0;
+      estado.chispas = estado.chispas.filter(c => c.vida > 0);
+    },
+  },
+];
+
+const tarjetas = ESTILOS.map((e, i) => {
+  const div = document.createElement('div');
+  div.className = 'tarjeta';
+  const lienzo = document.createElement('canvas');
+  lienzo.width = ANCHO; lienzo.height = ALTO;
+  const pie = document.createElement('div');
+  pie.className = 'pie';
+  pie.innerHTML = `<b>${i + 1}. ${e.nombre}</b><span>${e.texto}</span>`;
+  div.append(lienzo, pie);
+  document.getElementById('rejilla').append(div);
+  return { e, g: lienzo.getContext('2d'), estado: {} };
+});
+
+function cuadro(ms) {
+  const t = ms / 1000;
+  for (const k of tarjetas) {
+    k.g.drawImage(FONDO, 0, 0);
+    // Un velo muy suave del color dentro del territorio (como en el juego).
+    rellenoDentro(k.g, rgba(COLOR, 0.07));
+    k.e.dibujar(k.g, t, k.estado);
+  }
+  requestAnimationFrame(cuadro);
+}
+requestAnimationFrame(cuadro);
+</script>
+</body>
+</html>

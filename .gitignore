@@ -2,3 +2,9 @@ build/
 dist/
 -.jsonl
 *.log
+# Bloqueos entre trabajadores del estudio (tools/bloqueo.sh): estado, no código
+.bloqueos/
+# Copias de seguridad de Blender
+*.blend1
+# Lo genera tools/blender/almacen_interior.py (se rehace con el script)
+tools/blender/almacen_interior.blend
